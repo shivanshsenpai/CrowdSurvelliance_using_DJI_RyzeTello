@@ -1,0 +1,7 @@
+models/
+*.weights
+*.pt
+*.cfg
+__pycache__/
+*.pyc
+.venv/
