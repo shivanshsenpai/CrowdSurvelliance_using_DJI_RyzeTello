@@ -67,6 +67,17 @@ class DataConsumer(AsyncWebsocketConsumer):
         """Continuously send telemetry data to the client."""
         try:
             while self._running and state.running:
+                # Get analytics session info (refreshed each cycle)
+                _session_id = None
+                _recording = False
+                try:
+                    from .analytics import recorder as _rec
+                    if _rec:
+                        _session_id = _rec.session_id
+                        _recording = _rec._running
+                except Exception:
+                    pass
+
                 data = {
                     "mode": state.mode,
                     "battery": state.battery,
@@ -84,6 +95,9 @@ class DataConsumer(AsyncWebsocketConsumer):
                     "confidence_values": list(state.confidence_values)[-30:],
                     "alerts": list(state.alert_history)[:20],
                     "total_alerts": sum(state.alert_counts.values()),
+                    "demo_mode": state.demo_mode,
+                    "session_id": _session_id,
+                    "recording_active": _recording,
                 }
                 await self.send(text_data=json.dumps(data))
                 await asyncio.sleep(1.0 / DATA_FPS)

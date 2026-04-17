@@ -23,6 +23,85 @@ def index(request):
     return render(request, 'surveillance/index.html')
 
 
+def analytics_page(request):
+    """Serve the analytics report page."""
+    return render(request, 'surveillance/analytics.html')
+
+
+@require_GET
+def api_analytics_report(request):
+    """Generate a full analysis report."""
+    from .analytics import generate_report
+    session_id = request.GET.get('session_id')
+    hours = request.GET.get('hours')
+    try:
+        hours = float(hours) if hours else None
+    except (ValueError, TypeError):
+        hours = None
+    report = generate_report(session_id=session_id, hours=hours)
+    return JsonResponse(report, safe=False)
+
+
+@require_GET
+def api_analytics_history(request):
+    """Return time-series snapshot data."""
+    from .models import CrowdSnapshot
+    hours = request.GET.get('hours', '1')
+    try:
+        hours = float(hours)
+    except (ValueError, TypeError):
+        hours = 1
+
+    from django.utils import timezone as tz
+    from datetime import timedelta
+    cutoff = tz.now() - timedelta(hours=hours)
+
+    snapshots = CrowdSnapshot.objects.filter(
+        timestamp__gte=cutoff
+    ).values_list('timestamp', 'people_count', 'cumulative_count', 'mode', 'density_alert')
+
+    data = [
+        {
+            "timestamp": ts.strftime("%H:%M:%S"),
+            "datetime": ts.isoformat(),
+            "people_count": pc,
+            "cumulative_count": cc,
+            "mode": m,
+            "density_alert": da,
+        }
+        for ts, pc, cc, m, da in snapshots
+    ]
+    return JsonResponse({"snapshots": data, "count": len(data)})
+
+
+@require_GET
+def api_analytics_sessions(request):
+    """Return list of past surveillance sessions."""
+    from .models import SurveillanceSession
+    sessions = SurveillanceSession.objects.all()[:20]
+    data = []
+    for s in sessions:
+        duration = 0
+        if s.end_time and s.start_time:
+            duration = int((s.end_time - s.start_time).total_seconds())
+        elif s.start_time:
+            from django.utils import timezone as tz
+            duration = int((tz.now() - s.start_time).total_seconds())
+        data.append({
+            "session_id": s.session_id,
+            "start_time": s.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": s.end_time.strftime("%Y-%m-%d %H:%M:%S") if s.end_time else "Active",
+            "duration_sec": duration,
+            "peak_count": s.peak_count,
+            "avg_count": s.avg_count,
+            "total_unique": s.total_unique,
+            "total_alerts": s.total_alerts,
+            "total_snapshots": s.total_snapshots,
+            "is_active": s.is_active,
+        })
+    return JsonResponse({"sessions": data})
+
+
 @require_GET
 def api_status(request):
     """Get current drone and system status."""

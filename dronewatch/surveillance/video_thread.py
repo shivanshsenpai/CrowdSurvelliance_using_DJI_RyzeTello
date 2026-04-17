@@ -4,6 +4,7 @@ Captures frames from drone or webcam and runs YOLO detection.
 """
 
 import time
+import threading
 
 import cv2
 import numpy as np
@@ -50,25 +51,61 @@ def video_capture_thread():
     if not DEMO_MODE:
         try:
             from djitellopy import Tello
-            drone = Tello()
-            drone.connect()
-            drone.streamon()
-            state.connected = True
-            state.battery = drone.get_battery()
-            drone_state.drone_instance = drone
-            print("[INFO] Drone connected!")
-        except Exception as e:
-            print(f"[WARN] Drone not available: {e}")
-            print("[INFO] Falling back to webcam demo mode...")
+
+            # Attempt drone connection in a background thread with hard timeout
+            # (djitellopy's internal retries can hang for 20+ seconds)
+            _drone_result = [None]  # mutable container for thread result
+            _drone_error = [None]
+
+            def _try_drone():
+                try:
+                    d = Tello()
+                    d.connect()
+                    d.streamon()
+                    _drone_result[0] = d
+                except Exception as e:
+                    _drone_error[0] = e
+
+            print("[INFO] Attempting drone connection (8s timeout)...")
+            probe = threading.Thread(target=_try_drone, daemon=True)
+            probe.start()
+            probe.join(timeout=8)  # Hard 8-second cutoff
+
+            if _drone_result[0] is not None:
+                drone = _drone_result[0]
+                state.connected = True
+                state.battery = drone.get_battery()
+                drone_state.drone_instance = drone
+                print("[INFO] Drone connected!")
+            else:
+                err = _drone_error[0] or "Connection timed out"
+                print(f"[WARN] Drone not available: {err}")
+                print("[INFO] Falling back to webcam demo mode...")
+                state.demo_mode = True
+        except ImportError:
+            print("[WARN] djitellopy not installed — skipping drone")
             state.demo_mode = True
 
     if state.demo_mode or drone is None:
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("[WARN] No webcam found. Using synthetic frames.")
+        # Try multiple camera indices on Windows (0, 1, 2)
+        for cam_idx in (0, 1, 2):
+            cap = cv2.VideoCapture(cam_idx, cv2.CAP_DSHOW)
+            if cap.isOpened():
+                print(f"[INFO] Webcam opened on index {cam_idx} for demo mode.")
+                break
+            cap.release()
             cap = None
-        else:
-            print("[INFO] Webcam opened for demo mode.")
+
+        if cap is None:
+            # Fallback: try without DirectShow backend
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                print("[WARN] No webcam found. Using synthetic frames.")
+                cap.release()
+                cap = None
+            else:
+                print("[INFO] Webcam opened (default backend) for demo mode.")
+
         state.connected = True
 
     frame_time = 1.0 / WS_FPS

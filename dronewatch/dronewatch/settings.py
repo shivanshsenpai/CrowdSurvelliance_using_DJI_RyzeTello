@@ -18,6 +18,7 @@ ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'daphne',
+    'django.contrib.contenttypes',
     'django.contrib.staticfiles',
     'channels',
     'surveillance',
@@ -67,9 +68,13 @@ CHANNEL_LAYERS = {
 STATIC_URL = '/static/'
 
 # ========================= DATABASES =========================
-# No database needed for this project
 
-DATABASES = {}
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

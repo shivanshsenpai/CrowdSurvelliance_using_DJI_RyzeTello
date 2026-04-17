@@ -1,0 +1,409 @@
+================================================================================
+  DRONEWATCH — COMPLETE SYSTEM WORKFLOW
+  AI-Powered Crowd Surveillance using DJI Ryze Tello
+  Author: Shivansh Sharma
+================================================================================
+
+This document explains the complete workflow of the DroneWatch surveillance
+system — from startup to detection to analytics — in plain text format.
+
+================================================================================
+  1. SYSTEM OVERVIEW
+================================================================================
+
+DroneWatch is a real-time surveillance system that:
+  - Captures video from a DJI Ryze Tello drone (or falls back to webcam)
+  - Runs YOLO deep learning models to detect humans, weapons, and fire
+  - Streams processed video with detection overlays to a web dashboard
+  - Tracks crowd density, generates alerts, and records analytics data
+  - Provides drone flight controls through the web interface
+
+The system is built on:
+  Backend:  Django 5.1 + Channels (WebSocket support) + Daphne (ASGI server)
+  AI:       YOLOv4 (person), YOLOv3 (weapon), YOLOv4-tiny (fire) via OpenCV DNN
+  Frontend: HTML/CSS/JavaScript with Chart.js for real-time charts
+  Database: SQLite for analytics data persistence
+
+================================================================================
+  2. STARTUP SEQUENCE
+================================================================================
+
+When you run: python manage.py runserver 127.0.0.1:8000 --noreload
+
+Step 1: Django Initialization
+  - Django loads settings from dronewatch/settings.py
+  - ASGI application is configured (asgi.py)
+  - Channels layer is set up (InMemoryChannelLayer)
+  - SurveillanceConfig.ready() is triggered
+
+Step 2: YOLO Model Loading (apps.py → detection.py)
+  - Person detection model:  YOLOv4 (246 MB weights)
+    → Uses cv2.dnn.readNet() with OPENCV backend, CPU target
+    → Extracts output layer names for forward pass
+  - Weapon detection model:  YOLOv3 (235 MB weights)
+    → Custom-trained on weapon dataset (2000 iterations)
+  - Fire detection model:    YOLOv4-tiny (22 MB weights)
+    → Custom-trained on fire/smoke dataset
+    → Uses cv2.dnn.readNetFromDarknet()
+  
+  Total load time: ~5-10 seconds depending on hardware
+
+Step 3: Video Capture Thread (apps.py → video_thread.py)
+  - A daemon thread is spawned to handle frame capture + detection
+  - Drone connection attempt:
+    → djitellopy.Tello() is instantiated
+    → Connection is attempted in a SEPARATE daemon thread
+    → Main thread waits up to 8 seconds (hard timeout)
+    → If drone responds: LIVE mode activated
+    → If timeout expires: Falls back to webcam (DEMO mode)
+  - Webcam fallback:
+    → Tries camera indices 0, 1, 2 with DirectShow backend (Windows)
+    → Falls back to default backend if DirectShow fails
+    → Uses synthetic frames if no camera available
+
+Step 4: Analytics Recorder Start (deferred by 2 seconds)
+  - Creates a SurveillanceSession row in SQLite database
+  - Starts a background thread that snapshots data every 5 seconds
+  - Deferred to avoid Django "database during initialization" warning
+
+Step 5: Server Ready
+  - Daphne ASGI server starts listening on http://127.0.0.1:8000
+  - Dashboard and analytics pages are accessible
+  - WebSocket endpoints ready for video and data streaming
+
+================================================================================
+  3. FRAME CAPTURE & DETECTION LOOP
+================================================================================
+
+The video_capture_thread() runs continuously. Here is ONE iteration:
+
+  ① CAPTURE FRAME
+     ├─ If drone connected: drone.get_frame_read().frame
+     │   → Convert RGB to BGR (OpenCV format)
+     │   → Also read: altitude, battery, temperature
+     ├─ If webcam active: cap.read()
+     └─ If neither: generate random noise frame
+
+  ② RESIZE to 960×720 pixels
+
+  ③ DETECTION (every 3rd frame for performance):
+     Frame counter % 3 == 0 → Run YOLO
+     Frame counter % 3 != 0 → Redraw cached bounding boxes from last run
+
+  ④ YOLO DETECTION (based on current mode):
+
+     HUMAN MODE (detect_humans):
+       a. Create blob: 320×320, normalize by 1/255
+       b. Forward pass through YOLOv4
+       c. Filter detections: class_id == 0 (person), confidence > 0.5
+       d. Non-Maximum Suppression (NMS, threshold 0.4)
+       e. Centroid tracking:
+          - For each detection, compute center (cx, cy)
+          - Compare against all tracked_people positions
+          - If within 50px of existing person → same ID
+          - If no match → assign new unique ID, increment cumulative count
+       f. Draw green bounding boxes + "ID X  YY%" labels
+       g. Cache bounding boxes for frame-skipping reuse
+       h. Check density threshold (>10 people = alert)
+
+     WEAPON MODE (detect_weapons):
+       a. Create blob: 320×320
+       b. Forward pass through YOLOv3
+       c. Filter: confidence > 0.5
+       d. NMS (threshold 0.4)
+       e. Draw red bounding boxes + "WEAPON XX%" labels
+       f. Set weapon_alert flag → generate critical alert
+
+     FIRE MODE (detect_fire):
+       a. Create blob: 320×320
+       b. Forward pass through YOLOv4-tiny
+       c. Filter: confidence > 0.2 (lower threshold for fire)
+       d. NMS (threshold 0.5)
+       e. Draw orange bounding boxes + "FIRE XX%" labels
+       f. Set fire_alert flag → generate critical alert
+
+  ⑤ DEMO TELEMETRY (if no drone):
+     → Simulate battery drain (100% → 5% over time)
+     → Simulate altitude oscillation (50 ± 30 cm, sine wave)
+
+  ⑥ UPDATE STATE:
+     → state.processed_frame = frame (for WebSocket streaming)
+     → state.total_frames += 1
+     → Time-series data updated every 250ms:
+        people_history, altitude_history, fps_history
+
+  ⑦ FPS CONTROL:
+     → Calculate elapsed time for this loop iteration
+     → state.fps = 1.0 / elapsed
+     → Sleep to maintain 20 FPS target
+
+================================================================================
+  4. WEBSOCKET STREAMING
+================================================================================
+
+When a browser opens the dashboard, two WebSocket connections are established:
+
+  VIDEO WEBSOCKET (ws://host/ws/video)
+  ────────────────────────────────────
+  - VideoConsumer accepts the connection
+  - Starts async stream_video() loop
+  - Each iteration:
+    1. Read state.processed_frame
+    2. Encode as JPEG (quality 70) using cv2.imencode()
+    3. Convert to base64 string
+    4. Send to browser
+    5. Sleep 1/20 second (50ms)
+  - Browser receives: sets <img>.src = "data:image/jpeg;base64,..."
+  - Result: live video with detection overlays
+
+  DATA WEBSOCKET (ws://host/ws/data)
+  ──────────────────────────────────
+  - DataConsumer accepts the connection
+  - Starts async stream_data() loop
+  - Each iteration (every 250ms):
+    1. Build JSON payload:
+       - mode, battery, altitude, fps
+       - current_count, cumulative_count
+       - density_alert, weapon_alert, fire_alert
+       - uptime, signal
+       - alert_counts (density, weapon, fire)
+       - people_history (last 60 data points)
+       - confidence_values (last 30 values)
+       - alerts (last 20 alerts)
+       - session_id, recording_active, demo_mode
+    2. Send JSON to browser
+  - Browser receives: updates stats cards, charts, alert log
+
+================================================================================
+  5. ALERT SYSTEM
+================================================================================
+
+Alerts are generated when detection thresholds are exceeded:
+
+  DENSITY ALERT (severity: high)
+    Trigger:  current_count > 10 (configurable DENSITY_THRESHOLD)
+    Cooldown: 3 seconds between alerts
+    Message:  "High crowd density! X people detected"
+
+  WEAPON ALERT (severity: critical)
+    Trigger:  Any weapon detection with confidence > 0.5
+    Cooldown: 3 seconds between alerts
+    Message:  "WEAPON DETECTED IN FRAME!"
+
+  FIRE ALERT (severity: critical)
+    Trigger:  Any fire detection with confidence > 0.2
+    Cooldown: 3 seconds between alerts
+    Message:  "FIRE DETECTED IN FRAME!"
+
+Alert storage:
+  - Appended to state.alert_history (deque, max 200 entries)
+  - Counted in state.alert_counts (by type)
+  - Streamed to browser via data WebSocket
+  - Recorded in CrowdSnapshot database rows
+
+Browser alert features:
+  - Audio beep using Web Audio API (oscillator tone)
+  - Red/orange flash overlay on video feed
+  - Stat card visual highlight
+  - Filterable alert log panel
+
+================================================================================
+  6. ANALYTICS ENGINE
+================================================================================
+
+  RECORDING (analytics.py → AnalyticsRecorder)
+  ─────────────────────────────────────────────
+  Background thread runs continuously:
+    Every 5 seconds:
+      → Create CrowdSnapshot row in SQLite:
+          session (foreign key)
+          timestamp
+          people_count (current)
+          cumulative_count (total unique)
+          mode (human/weapon/fire)
+          density_alert (boolean)
+          weapon_alert (boolean)
+          fire_alert (boolean)
+
+  SESSION MANAGEMENT
+  ──────────────────
+  - New SurveillanceSession created on server start
+  - Session stores: session_id, start_time, end_time
+  - On server shutdown: session finalized with aggregated stats
+    → peak_count, avg_count, total_unique, total_alerts, total_snapshots
+
+  REPORT GENERATION (generate_report function)
+  ─────────────────────────────────────────────
+  When /api/analytics/report is called:
+
+    1. Query snapshots from database (by session or time range)
+    2. Compute aggregates:
+       - Peak count (MAX people_count)
+       - Average count (AVG people_count)
+       - Minimum count (MIN people_count)
+       - Total snapshots
+       - Density/weapon/fire alert counts (using Django Q filters)
+    3. Find peak time (timestamp of highest count)
+    4. Build timeline data (timestamp + count pairs)
+    5. Hourly breakdown (group by hour, compute avg/peak/min per hour)
+    6. Detect high-density events:
+       - Periods where count >= 10 (density threshold)
+       - Track event start, end, peak, duration
+    7. Trend analysis:
+       - Compare average of last 3 snapshots vs first 3
+       - If difference > 2: "increasing"
+       - If difference < -2: "decreasing"
+       - Otherwise: "stable"
+    8. Return complete JSON report
+
+================================================================================
+  7. DRONE CONTROL
+================================================================================
+
+When the drone is connected (LIVE mode):
+
+  REST API: POST /api/drone/<command>
+  
+  Available commands:
+    takeoff    → drone.takeoff()
+    land       → drone.land()
+    emergency  → drone.emergency() (motors off immediately)
+    up         → drone.move_up(30cm)
+    down       → drone.move_down(30cm)
+    left       → drone.move_left(30cm)
+    right      → drone.move_right(30cm)
+    forward    → drone.move_forward(30cm)
+    back       → drone.move_back(30cm)
+    cw         → drone.rotate_clockwise(30 degrees)
+    ccw        → drone.rotate_counter_clockwise(30 degrees)
+
+  In DEMO mode (webcam):
+    → Commands return: {"error": "No drone connected (demo mode)"}
+    → No actual movement occurs
+
+================================================================================
+  8. FRONTEND ARCHITECTURE
+================================================================================
+
+  DASHBOARD (index.html + app.js + style.css)
+  ────────────────────────────────────────────
+  Layout:
+    Header: Logo, mode switcher (Human/Weapon/Fire), analytics link, status
+    Left:   Live video feed (960×720), drone control panel
+    Right:  Stats cards (people, total, battery, altitude)
+            Detection timeline chart (line chart)
+            Alert distribution (doughnut chart)
+            Confidence levels (bar chart)
+    Bottom: Alert log panel with filter pills
+
+  On load:
+    1. Initialize Chart.js charts (3 charts)
+    2. Connect video WebSocket → stream frames to <img> tag
+    3. Connect data WebSocket → update all UI elements
+    4. Bind mode buttons → POST /api/mode/<mode>
+    5. Bind drone controls → POST /api/drone/<cmd>
+    6. Check source badge (WEBCAM vs DRONE)
+
+  ANALYTICS PAGE (analytics.html + analytics.js + analytics.css)
+  ──────────────────────────────────────────────────────────────
+  Layout:
+    Header: Logo, navigation (Dashboard / Analytics), export button
+    Session bar: Session ID, timestamps, duration, trend badge
+    Summary cards: Peak, average, unique people, total alerts
+    Charts: Crowd density timeline, hourly breakdown, alert distribution
+    Tables: High-density events, session history
+    Footer: Report generation timestamp
+
+  On load:
+    1. Fetch /api/analytics/report → render all charts and cards
+    2. Fetch /api/analytics/sessions → render session list
+    3. Start auto-refresh (every 30s for active sessions)
+
+================================================================================
+  9. FILE-BY-FILE REFERENCE
+================================================================================
+
+  dronewatch/dronewatch/settings.py
+    Django configuration. Key settings:
+    - INSTALLED_APPS: daphne, channels, surveillance
+    - CHANNEL_LAYERS: InMemoryChannelLayer
+    - ASGI_APPLICATION: dronewatch.asgi.application
+
+  dronewatch/dronewatch/asgi.py
+    ASGI entry point. Routes HTTP to Django, WebSocket to Channels consumers.
+
+  dronewatch/surveillance/apps.py
+    Startup logic: loads YOLO models, starts video thread, starts analytics.
+    Includes guards to prevent running during management commands.
+
+  dronewatch/surveillance/drone_state.py
+    Global singleton (DroneState class). Thread-safe shared state between
+    the video thread, WebSocket consumers, and REST API views. Contains
+    all detection counts, alert flags, telemetry data, and frame buffers.
+
+  dronewatch/surveillance/detection.py
+    YOLO model loading and three detection functions:
+    detect_humans(), detect_weapons(), detect_fire()
+    Plus redraw_cached_boxes() for frame-skipping optimization.
+
+  dronewatch/surveillance/video_thread.py
+    Background thread: captures frames, runs detection, updates state.
+    Handles drone connection (with timeout), webcam fallback, and demo mode.
+
+  dronewatch/surveillance/consumers.py
+    WebSocket consumers for Django Channels:
+    - VideoConsumer: streams JPEG frames as base64
+    - DataConsumer: streams JSON telemetry data
+
+  dronewatch/surveillance/views.py
+    REST API endpoints and template views:
+    - Dashboard and analytics page rendering
+    - Status, mode, alerts, drone control APIs
+    - Analytics report, history, and sessions APIs
+
+  dronewatch/surveillance/analytics.py
+    Analytics engine:
+    - AnalyticsRecorder: background thread, snapshots every 5s
+    - generate_report(): builds comprehensive analysis JSON
+
+  dronewatch/surveillance/models.py
+    Django ORM models:
+    - SurveillanceSession: one row per server run
+    - CrowdSnapshot: timestamped people count readings
+
+  dronewatch/surveillance/routing.py
+    Maps WebSocket URLs to consumer classes:
+    - /ws/video → VideoConsumer
+    - /ws/data  → DataConsumer
+
+  dronewatch/surveillance/urls.py
+    HTTP URL routes for all pages and API endpoints.
+
+================================================================================
+  10. PERFORMANCE OPTIMIZATIONS
+================================================================================
+
+  Frame Skipping:
+    YOLO runs on every 3rd frame (DETECT_EVERY_N = 3). On skipped frames,
+    cached bounding boxes are redrawn. This gives ~3x FPS boost with
+    minimal visual impact.
+
+  Reduced Input Size:
+    YOLO input is 320×320 instead of 416×416 or 608×608. This gives
+    a significant speedup with acceptable accuracy for surveillance.
+
+  JPEG Compression:
+    WebSocket frames use JPEG quality 70 for bandwidth efficiency.
+    960×720 @ quality 70 ≈ 30-50 KB per frame.
+
+  CPU Optimization:
+    All models run on CPU with OPENCV backend. No GPU required.
+    DNN_BACKEND_OPENCV is the fastest CPU backend available.
+
+  Data Throttling:
+    Telemetry updates at 4 Hz (not 20 Hz like video).
+    Time-series data limited to last 60/300 points.
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

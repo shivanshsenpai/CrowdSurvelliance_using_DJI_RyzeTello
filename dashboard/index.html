@@ -1,4 +1,3 @@
-{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,9 +6,9 @@
     <meta name="description" content="DroneWatch — AI-Powered Drone Surveillance Dashboard for Crowd, Weapon & Fire Detection">
     <title>DroneWatch — Surveillance Dashboard</title>
     <!-- ALL LOCAL — works offline on Tello WiFi -->
-    <link rel="stylesheet" href="{% static 'surveillance/vendor/fonts.css' %}">
-    <script src="{% static 'surveillance/vendor/chart.umd.min.js' %}"></script>
-    <link rel="stylesheet" href="{% static 'surveillance/style.css' %}">
+    <link rel="stylesheet" href="/static/vendor/fonts.css">
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <!-- ==================== HEADER ==================== -->
@@ -40,9 +39,6 @@
             </div>
         </div>
         <div class="header-right">
-            <a href="/analytics" class="analytics-link" id="analytics-link" title="View Analytics Report">
-                <span>📊</span> Analytics
-            </a>
             <div class="connection-status" id="connection-status">
                 <span class="status-dot"></span>
                 <span class="status-text">Connecting...</span>
@@ -210,7 +206,7 @@
 
     <!-- ==================== FOOTER ==================== -->
     <footer id="main-footer">
-        <span>DroneWatch v1.0 — AI Surveillance System by Shivansh Sharma (Django)</span>
+        <span>DroneWatch v1.0 — AI Surveillance System by Shivansh Sharma</span>
         <span id="footer-mode">Mode: HUMAN</span>
     </footer>
 
@@ -219,6 +215,6 @@
         <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbsGczFj2markup" type="audio/wav">
     </audio>
 
-    <script src="{% static 'surveillance/app.js' %}"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>

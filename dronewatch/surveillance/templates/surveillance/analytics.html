@@ -1,0 +1,210 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="DroneWatch — Crowd Analytics & Analysis Report">
+    <title>DroneWatch — Analytics Report</title>
+    <link rel="stylesheet" href="{% static 'surveillance/vendor/fonts.css' %}">
+    <script src="{% static 'surveillance/vendor/chart.umd.min.js' %}"></script>
+    <link rel="stylesheet" href="{% static 'surveillance/style.css' %}">
+    <link rel="stylesheet" href="{% static 'surveillance/analytics.css' %}">
+</head>
+<body>
+    <!-- ==================== HEADER ==================== -->
+    <header id="main-header">
+        <div class="header-left">
+            <div class="logo">
+                <span class="logo-icon">🛸</span>
+                <div class="logo-text">
+                    <h1>DroneWatch</h1>
+                    <span class="logo-subtitle">Analytics Report</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-center">
+            <nav class="analytics-nav">
+                <a href="/" class="nav-btn" id="nav-dashboard">
+                    <span class="nav-icon">📡</span>
+                    <span class="nav-label">Live Dashboard</span>
+                </a>
+                <a href="/analytics" class="nav-btn active" id="nav-analytics">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Analytics</span>
+                </a>
+            </nav>
+        </div>
+        <div class="header-right">
+            <div class="recording-indicator" id="recording-indicator">
+                <span class="rec-dot"></span>
+                <span class="rec-text">RECORDING</span>
+            </div>
+            <button class="export-btn" id="btn-export" onclick="exportReport()">
+                <span>📥</span> Export JSON
+            </button>
+        </div>
+    </header>
+
+    <!-- ==================== REPORT CONTENT ==================== -->
+    <main class="analytics-main" id="analytics-main">
+
+        <!-- Loading State -->
+        <div class="analytics-loading" id="analytics-loading">
+            <div class="spinner"></div>
+            <p>Generating analysis report...</p>
+        </div>
+
+        <!-- Error State -->
+        <div class="analytics-error" id="analytics-error" style="display:none;">
+            <span class="error-icon">⚠️</span>
+            <h3>No Data Available</h3>
+            <p id="error-message">Start the surveillance system and wait for data to accumulate.</p>
+            <a href="/" class="nav-btn">← Back to Dashboard</a>
+        </div>
+
+        <!-- Report Content (hidden until loaded) -->
+        <div class="report-content" id="report-content" style="display:none;">
+
+            <!-- Session Info Bar -->
+            <div class="session-bar" id="session-bar">
+                <div class="session-info">
+                    <span class="session-label">SESSION</span>
+                    <span class="session-id" id="session-id">—</span>
+                </div>
+                <div class="session-meta">
+                    <span id="session-start">—</span>
+                    <span class="session-divider">→</span>
+                    <span id="session-end">—</span>
+                </div>
+                <div class="session-duration">
+                    <span class="duration-label">DURATION</span>
+                    <span class="duration-value" id="session-duration">—</span>
+                </div>
+                <div class="trend-badge" id="trend-badge">
+                    <span class="trend-arrow" id="trend-arrow">→</span>
+                    <span class="trend-text" id="trend-text">STABLE</span>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-grid" id="summary-grid">
+                <div class="summary-card peak">
+                    <div class="summary-icon">📈</div>
+                    <div class="summary-data">
+                        <span class="summary-value" id="sum-peak">0</span>
+                        <span class="summary-label">Peak Count</span>
+                        <span class="summary-detail" id="sum-peak-time">—</span>
+                    </div>
+                </div>
+                <div class="summary-card avg">
+                    <div class="summary-icon">📊</div>
+                    <div class="summary-data">
+                        <span class="summary-value" id="sum-avg">0</span>
+                        <span class="summary-label">Average Count</span>
+                        <span class="summary-detail" id="sum-snapshots">0 snapshots</span>
+                    </div>
+                </div>
+                <div class="summary-card unique">
+                    <div class="summary-icon">👥</div>
+                    <div class="summary-data">
+                        <span class="summary-value" id="sum-unique">0</span>
+                        <span class="summary-label">Total Unique People</span>
+                        <span class="summary-detail">Cumulative tracked</span>
+                    </div>
+                </div>
+                <div class="summary-card alerts">
+                    <div class="summary-icon">🚨</div>
+                    <div class="summary-data">
+                        <span class="summary-value" id="sum-alerts">0</span>
+                        <span class="summary-label">Total Alerts</span>
+                        <span class="summary-detail" id="sum-alert-breakdown">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row 1: Full-width Timeline -->
+            <div class="chart-card-analytics full-width" id="chart-timeline-card">
+                <div class="chart-header">
+                    <h2>📉 Crowd Density Timeline</h2>
+                    <div class="chart-controls">
+                        <button class="time-btn active" data-hours="1" onclick="refreshReport(1)">1H</button>
+                        <button class="time-btn" data-hours="6" onclick="refreshReport(6)">6H</button>
+                        <button class="time-btn" data-hours="24" onclick="refreshReport(24)">24H</button>
+                        <button class="time-btn" data-hours="" onclick="refreshReport(null)">ALL</button>
+                    </div>
+                </div>
+                <div class="chart-wrapper-analytics timeline-chart">
+                    <canvas id="chart-timeline"></canvas>
+                </div>
+            </div>
+
+            <!-- Charts Row 2: Two side-by-side -->
+            <div class="charts-grid-analytics">
+                <div class="chart-card-analytics" id="chart-hourly-card">
+                    <div class="chart-header">
+                        <h2>🕐 Hourly Breakdown</h2>
+                    </div>
+                    <div class="chart-wrapper-analytics">
+                        <canvas id="chart-hourly"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card-analytics" id="chart-alert-dist-card">
+                    <div class="chart-header">
+                        <h2>🚨 Alert Distribution</h2>
+                    </div>
+                    <div class="chart-wrapper-analytics doughnut-wrapper-analytics">
+                        <canvas id="chart-alert-dist"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- High-Density Events Table -->
+            <div class="events-card" id="events-card">
+                <div class="chart-header">
+                    <h2>⚡ High-Density Events</h2>
+                    <span class="events-count" id="events-count">0 events</span>
+                </div>
+                <div class="events-table-wrapper">
+                    <table class="events-table" id="events-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Start Time</th>
+                                <th>End Time</th>
+                                <th>Duration</th>
+                                <th>Peak Count</th>
+                                <th>Severity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="events-tbody">
+                            <tr class="empty-row">
+                                <td colspan="6">No high-density events recorded</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Past Sessions -->
+            <div class="sessions-card" id="sessions-card">
+                <div class="chart-header">
+                    <h2>📋 Session History</h2>
+                    <button class="refresh-btn" onclick="loadSessions()">↻ Refresh</button>
+                </div>
+                <div class="sessions-list" id="sessions-list">
+                    <p class="sessions-empty">Loading sessions...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== FOOTER ==================== -->
+    <footer id="main-footer">
+        <span>DroneWatch v1.0 — AI Surveillance Analytics by Shivansh Sharma</span>
+        <span id="report-generated">Report generated: —</span>
+    </footer>
+
+    <script src="{% static 'surveillance/analytics.js' %}"></script>
+</body>
+</html>

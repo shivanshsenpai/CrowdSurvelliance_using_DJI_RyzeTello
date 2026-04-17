@@ -9,7 +9,9 @@ import threading
 from collections import deque
 
 
-DEMO_MODE = "--demo" in sys.argv
+import os
+
+DEMO_MODE = "--demo" in sys.argv or os.environ.get("DEMO", "").strip() in ("1", "true", "yes")
 
 
 class DroneState:

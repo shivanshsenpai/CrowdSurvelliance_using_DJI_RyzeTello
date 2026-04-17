@@ -1,7 +1,26 @@
+# Model weights (too large for git)
 models/
 *.weights
 *.pt
-*.cfg
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
+venv/
+
+# Django
+dronewatch/db.sqlite3
+
+# IDE
+.vscode/
+.idea/
+
+# Temp files
+tempCodeRunnerFile.py
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
