@@ -8,6 +8,9 @@ from . import views
 urlpatterns = [
     path('', views.index, name='dashboard'),
     path('analytics', views.analytics_page, name='analytics'),
+    path('history/', views.history_page, name='history'),
+    path('history/login/', views.history_login, name='history-login'),
+    path('history/logout/', views.history_logout, name='history-logout'),
     path('api/status', views.api_status, name='api-status'),
     path('api/mode/<str:mode>', views.api_set_mode, name='api-mode'),
     path('api/alerts', views.api_alerts, name='api-alerts'),

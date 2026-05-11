@@ -3,13 +3,15 @@ DroneWatch — Django Views.
 REST API endpoints and dashboard template view.
 """
 
-import json
 import time
 
+from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
+from django.contrib.auth.decorators import user_passes_test
+from django.db.models import Avg, Count, Max, Q
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.http import require_POST, require_GET, require_http_methods
 
 from .drone_state import state, drone_instance
 from . import drone_state as drone_state_module
@@ -26,6 +28,163 @@ def index(request):
 def analytics_page(request):
     """Serve the analytics report page."""
     return render(request, 'surveillance/analytics.html')
+
+
+def _is_superuser(user):
+    return (
+        user is not None
+        and user.is_authenticated
+        and user.is_active
+        and user.is_superuser
+    )
+
+
+def _format_duration(seconds):
+    seconds = max(int(seconds or 0), 0)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+@require_http_methods(["GET", "POST"])
+def history_login(request):
+    """Custom login page for surveillance history."""
+    if _is_superuser(request.user):
+        return redirect('history')
+
+    error = None
+    if request.method == "POST":
+        username = request.POST.get("username", "").strip()
+        password = request.POST.get("password", "")
+        user = authenticate(request, username=username, password=password)
+        if _is_superuser(user):
+            auth_login(request, user)
+            return redirect(request.GET.get("next") or 'history')
+        error = "Invalid superuser username or password."
+
+    return render(request, 'surveillance/history_login.html', {"error": error})
+
+
+@require_GET
+def history_logout(request):
+    """Log out of the custom history area."""
+    auth_logout(request)
+    return redirect('history-login')
+
+
+@require_GET
+@user_passes_test(_is_superuser, login_url='/history/login/')
+def history_page(request):
+    """Show past surveillance run history on a custom DroneWatch page."""
+    from .models import CrowdSnapshot, SurveillanceSession
+    from django.utils import timezone as tz
+
+    sessions = SurveillanceSession.objects.annotate(
+        snapshot_count=Count('snapshots'),
+        computed_peak=Max('snapshots__people_count'),
+        computed_avg=Avg('snapshots__people_count'),
+        computed_unique=Max('snapshots__cumulative_count'),
+        computed_density_alerts=Count(
+            'snapshots',
+            filter=Q(snapshots__density_alert=True),
+        ),
+        computed_weapon_alerts=Count(
+            'snapshots',
+            filter=Q(snapshots__weapon_alert=True),
+        ),
+        computed_fire_alerts=Count(
+            'snapshots',
+            filter=Q(snapshots__fire_alert=True),
+        ),
+    ).order_by('-start_time')
+
+    selected_session = None
+    session_id = request.GET.get('session')
+    if session_id:
+        selected_session = sessions.filter(session_id=session_id).first()
+    if selected_session is None:
+        selected_session = sessions.first()
+
+    snapshots = []
+    summary = None
+    selected_duration = None
+
+    if selected_session:
+        snapshot_qs = CrowdSnapshot.objects.filter(
+            session=selected_session
+        ).order_by('-timestamp')
+        snapshots = list(snapshot_qs[:200])
+
+        alert_counts = snapshot_qs.aggregate(
+            peak=Max('people_count'),
+            average=Avg('people_count'),
+            unique=Max('cumulative_count'),
+            density=Count('id', filter=Q(density_alert=True)),
+            weapon=Count('id', filter=Q(weapon_alert=True)),
+            fire=Count('id', filter=Q(fire_alert=True)),
+        )
+
+        end_time = selected_session.end_time or tz.now()
+        selected_duration = _format_duration(
+            (end_time - selected_session.start_time).total_seconds()
+        )
+        summary = {
+            "snapshots": snapshot_qs.count(),
+            "peak": alert_counts["peak"] or selected_session.peak_count,
+            "average": round(
+                alert_counts["average"]
+                if alert_counts["average"] is not None
+                else selected_session.avg_count,
+                2,
+            ),
+            "unique": alert_counts["unique"] or selected_session.total_unique,
+            "alerts": (
+                alert_counts["density"]
+                + alert_counts["weapon"]
+                + alert_counts["fire"]
+            ),
+            "density_alerts": alert_counts["density"],
+            "weapon_alerts": alert_counts["weapon"],
+            "fire_alerts": alert_counts["fire"],
+        }
+
+    session_cards = []
+    for session in sessions[:50]:
+        end_time = session.end_time or tz.now()
+        duration = _format_duration((end_time - session.start_time).total_seconds())
+        density_alerts = session.computed_density_alerts or 0
+        weapon_alerts = session.computed_weapon_alerts or 0
+        fire_alerts = session.computed_fire_alerts or 0
+        session_cards.append({
+            "item": session,
+            "duration": duration,
+            "peak": session.computed_peak or session.peak_count,
+            "average": round(
+                session.computed_avg
+                if session.computed_avg is not None
+                else session.avg_count,
+                2,
+            ),
+            "unique": session.computed_unique or session.total_unique,
+            "alerts": density_alerts + weapon_alerts + fire_alerts,
+            "snapshots": session.snapshot_count or session.total_snapshots,
+            "is_selected": (
+                selected_session is not None
+                and session.session_id == selected_session.session_id
+            ),
+        })
+
+    return render(request, 'surveillance/history.html', {
+        "session_cards": session_cards,
+        "selected_session": selected_session,
+        "selected_duration": selected_duration,
+        "summary": summary,
+        "snapshots": snapshots,
+    })
 
 
 @require_GET
@@ -78,7 +237,24 @@ def api_analytics_history(request):
 def api_analytics_sessions(request):
     """Return list of past surveillance sessions."""
     from .models import SurveillanceSession
-    sessions = SurveillanceSession.objects.all()[:20]
+    sessions = SurveillanceSession.objects.annotate(
+        snapshot_count=Count('snapshots'),
+        computed_peak=Max('snapshots__people_count'),
+        computed_avg=Avg('snapshots__people_count'),
+        computed_unique=Max('snapshots__cumulative_count'),
+        computed_density_alerts=Count(
+            'snapshots',
+            filter=Q(snapshots__density_alert=True),
+        ),
+        computed_weapon_alerts=Count(
+            'snapshots',
+            filter=Q(snapshots__weapon_alert=True),
+        ),
+        computed_fire_alerts=Count(
+            'snapshots',
+            filter=Q(snapshots__fire_alert=True),
+        ),
+    )[:20]
     data = []
     for s in sessions:
         duration = 0
@@ -87,16 +263,24 @@ def api_analytics_sessions(request):
         elif s.start_time:
             from django.utils import timezone as tz
             duration = int((tz.now() - s.start_time).total_seconds())
+        total_alerts = (
+            (s.computed_density_alerts or 0)
+            + (s.computed_weapon_alerts or 0)
+            + (s.computed_fire_alerts or 0)
+        )
         data.append({
             "session_id": s.session_id,
             "start_time": s.start_time.strftime("%Y-%m-%d %H:%M:%S"),
             "end_time": s.end_time.strftime("%Y-%m-%d %H:%M:%S") if s.end_time else "Active",
             "duration_sec": duration,
-            "peak_count": s.peak_count,
-            "avg_count": s.avg_count,
-            "total_unique": s.total_unique,
-            "total_alerts": s.total_alerts,
-            "total_snapshots": s.total_snapshots,
+            "peak_count": s.computed_peak or s.peak_count,
+            "avg_count": round(
+                s.computed_avg if s.computed_avg is not None else s.avg_count,
+                2,
+            ),
+            "total_unique": s.computed_unique or s.total_unique,
+            "total_alerts": total_alerts or s.total_alerts,
+            "total_snapshots": s.snapshot_count or s.total_snapshots,
             "is_active": s.is_active,
         })
     return JsonResponse({"sessions": data})
@@ -112,6 +296,12 @@ def api_status(request):
         "battery": state.battery,
         "altitude": state.altitude,
         "fps": round(state.fps, 1),
+        "detection_accuracy": state.detection_accuracy,
+        "average_confidence": state.average_confidence,
+        "recent_detection_count": state.recent_detection_count,
+        "startup_memory_count": len(state.startup_people_signatures),
+        "startup_people_seen": state.startup_people_seen,
+        "startup_memory_limit": state.startup_memory_limit,
         "uptime": round(time.time() - state.session_start),
         "total_frames": state.total_frames,
         "models_loaded": models_loaded,
@@ -130,6 +320,8 @@ def api_set_mode(request, mode):
     state.fire_alert = False
     state.current_count = 0
     state.tracked_people = {}
+    state.tracked_people_ignored = {}
+    state.tracked_people_memory_slots = {}
     print(f"[INFO] Mode switched to {mode.upper()}")
     return JsonResponse({"mode": mode})
 

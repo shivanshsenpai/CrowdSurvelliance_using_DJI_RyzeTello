@@ -24,6 +24,7 @@ WHT = 320  # Input size for YOLO tiny models
 # Performance tuning
 YOLO_INPUT_SIZE = 320
 DETECT_EVERY_N = 3
+STARTUP_MEMORY_MATCH_THRESHOLD = 0.78
 
 # ========================= MODEL PATHS =========================
 # Models are stored one directory up from the dronewatch project root
@@ -110,6 +111,90 @@ def load_models():
 
 # ========================= DETECTION FUNCTIONS =========================
 
+def _update_detection_quality(confidences):
+    """Update live detection-quality metrics from accepted model confidences."""
+    if confidences:
+        state.detection_accuracy = round(
+            (sum(confidences) / len(confidences)) * 100, 1
+        )
+        state.recent_detection_count = len(confidences)
+    else:
+        state.detection_accuracy = 0.0
+        state.recent_detection_count = 0
+
+    recent = list(state.confidence_values)[-30:]
+    state.average_confidence = round(
+        (sum(recent) / len(recent)) * 100, 1
+    ) if recent else 0.0
+
+
+def _clip_box(frame, x, y, bw, bh):
+    h, w = frame.shape[:2]
+    x1 = max(0, x)
+    y1 = max(0, y)
+    x2 = min(w, x + bw)
+    y2 = min(h, y + bh)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return x1, y1, x2, y2
+
+
+def _build_person_signature(frame, x, y, bw, bh):
+    """Build a compact visual signature from the top of a person box."""
+    clipped = _clip_box(frame, x, y, bw, bh)
+    if clipped is None:
+        return None
+
+    x1, y1, x2, y2 = clipped
+    upper_y2 = min(y2, y1 + max(1, int((y2 - y1) * 0.45)))
+    crop = frame[y1:upper_y2, x1:x2]
+    if crop.size == 0 or crop.shape[0] < 8 or crop.shape[1] < 8:
+        return None
+
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1], None, [24, 16], [0, 180, 0, 256])
+    cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+
+    return {
+        "hist": hist.astype("float32"),
+        "aspect": float(crop.shape[1]) / max(float(crop.shape[0]), 1.0),
+    }
+
+
+def _signature_similarity(a, b):
+    if not a or not b:
+        return 0.0
+
+    hist_score = cv2.compareHist(a["hist"], b["hist"], cv2.HISTCMP_CORREL)
+    hist_score = max(0.0, min(1.0, float(hist_score)))
+    aspect_gap = abs(a["aspect"] - b["aspect"]) / max(a["aspect"], b["aspect"], 1.0)
+    aspect_score = 1.0 - min(1.0, aspect_gap)
+    return (hist_score * 0.85) + (aspect_score * 0.15)
+
+
+def _find_startup_memory_match(signature):
+    best_slot = None
+    best_score = 0.0
+    for slot, remembered in enumerate(state.startup_people_signatures):
+        score = _signature_similarity(signature, remembered)
+        if score > best_score:
+            best_slot = slot
+            best_score = score
+
+    if best_slot is not None and best_score >= STARTUP_MEMORY_MATCH_THRESHOLD:
+        return best_slot
+    return None
+
+
+def _remember_startup_person(signature):
+    if signature is None:
+        return None
+    if len(state.startup_people_signatures) >= state.startup_memory_limit:
+        return None
+
+    state.startup_people_signatures.append(signature)
+    return len(state.startup_people_signatures) - 1
+
 def detect_humans(frame):
     """Detect humans using YOLOv4 with centroid tracking."""
     h, w, _ = frame.shape
@@ -144,46 +229,82 @@ def detect_humans(frame):
         indices = result.flatten() if len(result) > 0 else []
 
     new_tracked = {}
+    new_ignored = {}
+    new_memory_slots = {}
     new_people = 0
     cached_boxes = []
+    accepted_confidences = []
 
     for i in indices:
         x, y, bw, bh = boxes[i]
         cx, cy = x + bw // 2, y + bh // 2
         conf = confidences[i]
+        signature = _build_person_signature(frame, x, y, bw, bh)
+        ignored = False
+        memory_slot = None
 
         matched_id = None
         for pid, (px, py) in state.tracked_people.items():
             if abs(cx - px) < 50 and abs(cy - py) < 50:
                 matched_id = pid
+                ignored = state.tracked_people_ignored.get(pid, False)
+                memory_slot = state.tracked_people_memory_slots.get(pid)
                 break
 
         if matched_id is None:
-            matched_id = state.next_person_id
-            state.next_person_id += 1
-            new_people += 1
+            memory_slot = _find_startup_memory_match(signature)
+            if memory_slot is not None:
+                matched_id = -(memory_slot + 1)
+                ignored = True
+            elif state.startup_people_seen < state.startup_memory_limit:
+                memory_slot = _remember_startup_person(signature)
+                state.startup_people_seen += 1
+                if memory_slot is not None:
+                    matched_id = -(memory_slot + 1)
+                    ignored = True
+                else:
+                    matched_id = state.next_startup_track_id
+                    state.next_startup_track_id -= 1
+                    ignored = True
+            else:
+                matched_id = state.next_person_id
+                state.next_person_id += 1
+                new_people += 1
 
         new_tracked[matched_id] = (cx, cy)
+        new_ignored[matched_id] = ignored
+        if memory_slot is not None:
+            new_memory_slots[matched_id] = memory_slot
 
         # Draw bounding box
-        cv2.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 100), 2)
-        label = f"ID {matched_id} {int(conf * 100)}%"
+        color = (90, 180, 255) if ignored else (0, 255, 100)
+        label_id = (
+            f"START {memory_slot + 1:02d}"
+            if ignored and memory_slot is not None
+            else f"ID {matched_id}"
+        )
+        cv2.rectangle(frame, (x, y), (x + bw, y + bh), color, 2)
+        label = f"{label_id} {int(conf * 100)}%"
         (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(frame, (x, y - lh - 10), (x + lw + 4, y), (0, 255, 100), -1)
+        cv2.rectangle(frame, (x, y - lh - 10), (x + lw + 4, y), color, -1)
         cv2.putText(frame, label, (x + 2, y - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
         cached_boxes.append({
             "x": x, "y": y, "w": bw, "h": bh,
-            "color": (0, 255, 100), "label": label, "label_color": (0, 0, 0)
+            "color": color, "label": label, "label_color": (0, 0, 0)
         })
         state.confidence_values.append(conf)
+        accepted_confidences.append(conf)
 
     state.last_detection_boxes = cached_boxes
     state.tracked_people = new_tracked
+    state.tracked_people_ignored = new_ignored
+    state.tracked_people_memory_slots = new_memory_slots
     state.cumulative_count += new_people
-    state.current_count = len(new_tracked)
+    state.current_count = sum(1 for ignored in new_ignored.values() if not ignored)
     state.density_alert = state.current_count > DENSITY_THRESHOLD
+    _update_detection_quality(accepted_confidences)
 
     if state.density_alert and time.time() - state.last_alert_time > 3:
         state.last_alert_time = time.time()
@@ -232,6 +353,7 @@ def detect_weapons(frame):
 
     weapon_detected = False
     cached_boxes = []
+    accepted_confidences = []
     if len(boxes) > 0:
         indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
         if indices is not None and len(indices) > 0:
@@ -257,9 +379,11 @@ def detect_weapons(frame):
                     "label_color": (255, 255, 255)
                 })
                 state.confidence_values.append(conf)
+                accepted_confidences.append(conf)
 
     state.last_detection_boxes = cached_boxes
     state.weapon_alert = weapon_detected
+    _update_detection_quality(accepted_confidences)
 
     if weapon_detected and time.time() - state.last_alert_time > 3:
         state.last_alert_time = time.time()
@@ -305,6 +429,7 @@ def detect_fire(frame):
 
     fire_detected = False
     cached_boxes = []
+    accepted_confidences = []
     indices = cv2.dnn.NMSBoxes(boxes, confs, CONF_THRESHOLD, NMS_THRESHOLD)
 
     if len(indices) > 0:
@@ -330,9 +455,11 @@ def detect_fire(frame):
                 "label_color": (255, 255, 255)
             })
             state.confidence_values.append(conf)
+            accepted_confidences.append(conf)
 
     state.last_detection_boxes = cached_boxes
     state.fire_alert = fire_detected
+    _update_detection_quality(accepted_confidences)
 
     if fire_detected and time.time() - state.last_alert_time > 3:
         state.last_alert_time = time.time()

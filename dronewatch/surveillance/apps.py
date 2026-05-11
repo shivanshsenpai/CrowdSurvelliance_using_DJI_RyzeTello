@@ -45,8 +45,35 @@ class SurveillanceConfig(AppConfig):
         from .video_thread import video_capture_thread
         from .drone_state import state
 
+        def _ensure_default_superuser():
+            try:
+                from django.contrib.auth import get_user_model
+                from django.db.utils import OperationalError, ProgrammingError
+
+                User = get_user_model()
+                user, _created = User.objects.get_or_create(
+                    username="shiv",
+                    defaults={
+                        "is_staff": True,
+                        "is_superuser": True,
+                        "is_active": True,
+                    },
+                )
+                user.is_staff = True
+                user.is_superuser = True
+                user.is_active = True
+                user.set_password("pass")
+                user.save()
+                print("[INFO] Admin user ready: shiv / pass")
+            except (OperationalError, ProgrammingError) as e:
+                print(f"[WARN] Admin user not created yet: {e}")
+                print("[WARN] Run 'python manage.py migrate' first")
+            except Exception as e:
+                print(f"[WARN] Admin user setup failed: {e}")
+
         print("[INFO] Loading YOLO models...")
         load_models()
+        _ensure_default_superuser()
 
         thread = threading.Thread(target=video_capture_thread, daemon=True)
         thread.start()
@@ -75,4 +102,3 @@ class SurveillanceConfig(AppConfig):
         print(f"  Dashboard: http://localhost:8000")
         print(f"  Analytics: http://localhost:8000/analytics")
         print("=" * 60)
-

@@ -483,6 +483,8 @@ body::before {
 #card-total::before { background: var(--accent-purple); }
 #card-battery::before { background: var(--accent-green); }
 #card-altitude::before { background: var(--accent-amber); }
+#card-accuracy::before { background: var(--accent-pink); }
+#card-memory::before { background: var(--accent-blue); }
 
 .stat-card:hover {
     background: var(--bg-card-hover);
@@ -493,6 +495,9 @@ body::before {
 
 .stat-icon {
     font-size: 1.5rem;
+    min-width: 2rem;
+    text-align: center;
+    font-weight: 800;
     flex-shrink: 0;
 }
 
@@ -891,6 +896,8 @@ body::before {
 .stat-card:nth-child(2) { animation-delay: 0.1s; }
 .stat-card:nth-child(3) { animation-delay: 0.15s; }
 .stat-card:nth-child(4) { animation-delay: 0.2s; }
+.stat-card:nth-child(5) { animation-delay: 0.22s; }
+.stat-card:nth-child(6) { animation-delay: 0.24s; }
 
 #chart-people-card { animation-delay: 0.25s; }
 #chart-alerts-card { animation-delay: 0.3s; }
@@ -1081,4 +1088,3 @@ body::before {
 .analytics-link span {
     font-size: 1rem;
 }
-

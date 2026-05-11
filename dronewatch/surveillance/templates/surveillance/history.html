@@ -1,0 +1,168 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DroneWatch - Past History</title>
+    <link rel="stylesheet" href="{% static 'surveillance/vendor/fonts.css' %}">
+    <link rel="stylesheet" href="{% static 'surveillance/style.css' %}">
+    <link rel="stylesheet" href="{% static 'surveillance/history.css' %}">
+</head>
+<body>
+    <header id="main-header">
+        <div class="header-left">
+            <div class="logo">
+                <span class="logo-icon">DW</span>
+                <div class="logo-text">
+                    <h1>DroneWatch</h1>
+                    <span class="logo-subtitle">Past History Records</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-center">
+            <nav class="history-nav">
+                <a href="/" class="nav-btn">Live Dashboard</a>
+                <a href="/analytics" class="nav-btn">Analytics</a>
+                <a href="/history/" class="nav-btn active">History</a>
+            </nav>
+        </div>
+        <div class="header-right">
+            <span class="history-user">Logged in as {{ request.user.username }}</span>
+            <a href="/history/logout/" class="analytics-link">Logout</a>
+        </div>
+    </header>
+
+    <main class="history-main">
+        <section class="history-sidebar">
+            <div class="history-section-title">
+                <h2>Project Runs</h2>
+                <span>{{ session_cards|length }} shown</span>
+            </div>
+
+            <div class="history-session-list">
+                {% for card in session_cards %}
+                    <a class="history-session-card {% if card.is_selected %}selected{% endif %}"
+                       href="/history/?session={{ card.item.session_id }}">
+                        <div class="history-session-top">
+                            <span class="history-session-id">{{ card.item.session_id|slice:":8" }}</span>
+                            <span class="history-session-status {% if card.item.is_active %}live{% endif %}">
+                                {% if card.item.is_active %}Live{% else %}Ended{% endif %}
+                            </span>
+                        </div>
+                        <span class="history-session-time">{{ card.item.start_time|date:"M d, Y H:i:s" }}</span>
+                        <div class="history-session-metrics">
+                            <span>Peak {{ card.peak }}</span>
+                            <span>Avg {{ card.average }}</span>
+                            <span>{{ card.snapshots }} rows</span>
+                            <span>{{ card.duration }}</span>
+                        </div>
+                    </a>
+                {% empty %}
+                    <div class="history-empty">
+                        <h3>No history yet</h3>
+                        <p>Run the live dashboard for a few seconds to create records.</p>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="history-detail">
+            {% if selected_session %}
+                <div class="history-hero">
+                    <div>
+                        <span class="history-kicker">Selected Session</span>
+                        <h2>{{ selected_session.session_id|slice:":8" }}</h2>
+                        <p>
+                            Started {{ selected_session.start_time|date:"M d, Y H:i:s" }}
+                            {% if selected_session.end_time %}
+                                and ended {{ selected_session.end_time|date:"M d, Y H:i:s" }}.
+                            {% else %}
+                                and is currently active.
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="history-duration">
+                        <span>Duration</span>
+                        <strong>{{ selected_duration }}</strong>
+                    </div>
+                </div>
+
+                <div class="history-summary-grid">
+                    <div class="history-summary-card">
+                        <span>Snapshots</span>
+                        <strong>{{ summary.snapshots }}</strong>
+                    </div>
+                    <div class="history-summary-card">
+                        <span>Peak Count</span>
+                        <strong>{{ summary.peak }}</strong>
+                    </div>
+                    <div class="history-summary-card">
+                        <span>Average Count</span>
+                        <strong>{{ summary.average }}</strong>
+                    </div>
+                    <div class="history-summary-card">
+                        <span>Total Unique</span>
+                        <strong>{{ summary.unique }}</strong>
+                    </div>
+                    <div class="history-summary-card alerts">
+                        <span>Total Alerts</span>
+                        <strong>{{ summary.alerts }}</strong>
+                    </div>
+                </div>
+
+                <div class="history-alert-strip">
+                    <span>Density: {{ summary.density_alerts }}</span>
+                    <span>Weapon: {{ summary.weapon_alerts }}</span>
+                    <span>Fire: {{ summary.fire_alerts }}</span>
+                </div>
+
+                <div class="history-table-card">
+                    <div class="history-section-title">
+                        <h2>Snapshot Records</h2>
+                        <span>Latest 200</span>
+                    </div>
+                    <div class="history-table-wrap">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Mode</th>
+                                    <th>People</th>
+                                    <th>Cumulative</th>
+                                    <th>Density</th>
+                                    <th>Weapon</th>
+                                    <th>Fire</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for snapshot in snapshots %}
+                                    <tr>
+                                        <td>{{ snapshot.timestamp|date:"M d, H:i:s" }}</td>
+                                        <td>{{ snapshot.mode|upper }}</td>
+                                        <td>{{ snapshot.people_count }}</td>
+                                        <td>{{ snapshot.cumulative_count }}</td>
+                                        <td>{% if snapshot.density_alert %}<span class="yes">Yes</span>{% else %}<span class="no">No</span>{% endif %}</td>
+                                        <td>{% if snapshot.weapon_alert %}<span class="yes danger">Yes</span>{% else %}<span class="no">No</span>{% endif %}</td>
+                                        <td>{% if snapshot.fire_alert %}<span class="yes danger">Yes</span>{% else %}<span class="no">No</span>{% endif %}</td>
+                                    </tr>
+                                {% empty %}
+                                    <tr>
+                                        <td colspan="7" class="history-empty-row">No snapshots recorded for this run yet.</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% else %}
+                <div class="history-empty large">
+                    <h2>No past records found</h2>
+                    <p>Start the live dashboard and wait for the recorder to save snapshots.</p>
+                    <a href="/" class="analytics-link">Open Dashboard</a>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

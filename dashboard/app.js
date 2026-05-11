@@ -29,6 +29,8 @@ const DOM = {
     statCumulativeCount: document.getElementById('stat-cumulative-count'),
     statBattery: document.getElementById('stat-battery'),
     statAltitude: document.getElementById('stat-altitude'),
+    statDetectionAccuracy: document.getElementById('stat-detection-accuracy'),
+    statStartupMemory: document.getElementById('stat-startup-memory'),
     batteryFill: document.getElementById('battery-fill'),
     cardPeople: document.getElementById('card-people'),
 
@@ -299,6 +301,13 @@ function handleTelemetry(data) {
 
     DOM.statAltitude.textContent = `${data.altitude} cm`;
     DOM.fpsBadge.textContent = `${data.fps} FPS`;
+
+    const accuracy = Number(data.detection_accuracy || 0);
+    updateStat(DOM.statDetectionAccuracy, `${accuracy.toFixed(1)}%`);
+
+    const remembered = Number(data.startup_people_seen || data.startup_memory_count || 0);
+    const memoryLimit = Number(data.startup_memory_limit || 10);
+    updateStat(DOM.statStartupMemory, `${Math.min(remembered, memoryLimit)}/${memoryLimit}`);
 
     // Uptime
     const mins = Math.floor(data.uptime / 60);

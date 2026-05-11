@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 from django.utils import timezone
-from django.db.models import Avg, Max, Min, Count, Sum, F, Q
+from django.db.models import Avg, Max, Min, Count, Q
 
 from .drone_state import state
 from .models import CrowdSnapshot, SurveillanceSession
@@ -22,6 +22,36 @@ SNAPSHOT_INTERVAL = 5  # seconds between snapshots
 
 
 # ========================= ANALYTICS RECORDER =========================
+
+def summarize_session(session, end_time=None, close=False):
+    """Refresh one session's summary fields from its saved snapshots."""
+    snapshots = CrowdSnapshot.objects.filter(session=session)
+    agg = snapshots.aggregate(
+        peak=Max('people_count'),
+        avg=Avg('people_count'),
+        total=Count('id'),
+        unique=Max('cumulative_count'),
+        density=Count('id', filter=Q(density_alert=True)),
+        weapon=Count('id', filter=Q(weapon_alert=True)),
+        fire=Count('id', filter=Q(fire_alert=True)),
+    )
+
+    session.peak_count = agg['peak'] or 0
+    session.avg_count = round(agg['avg'] or 0, 2)
+    session.total_unique = agg['unique'] or 0
+    session.total_alerts = (
+        (agg['density'] or 0)
+        + (agg['weapon'] or 0)
+        + (agg['fire'] or 0)
+    )
+    session.total_snapshots = agg['total'] or 0
+
+    if close:
+        session.end_time = end_time or timezone.now()
+        session.is_active = False
+
+    session.save()
+    return session
 
 class AnalyticsRecorder:
     """Background thread that periodically snapshots crowd data to the DB."""
@@ -34,6 +64,9 @@ class AnalyticsRecorder:
 
     def start(self):
         """Create session row and start the recording thread."""
+        for stale_session in SurveillanceSession.objects.filter(is_active=True):
+            summarize_session(stale_session, end_time=timezone.now(), close=True)
+
         self.session = SurveillanceSession.objects.create(
             session_id=self.session_id,
             start_time=timezone.now(),
@@ -73,26 +106,14 @@ class AnalyticsRecorder:
             weapon_alert=state.weapon_alert,
             fire_alert=state.fire_alert,
         )
+        summarize_session(self.session)
 
     def _finalize_session(self):
         """Update the session row with aggregated statistics."""
         if not self.session:
             return
         try:
-            snapshots = CrowdSnapshot.objects.filter(session=self.session)
-            agg = snapshots.aggregate(
-                peak=Max('people_count'),
-                avg=Avg('people_count'),
-                total=Count('id'),
-            )
-            self.session.end_time = timezone.now()
-            self.session.peak_count = agg['peak'] or 0
-            self.session.avg_count = round(agg['avg'] or 0, 2)
-            self.session.total_unique = state.cumulative_count
-            self.session.total_alerts = sum(state.alert_counts.values())
-            self.session.total_snapshots = agg['total'] or 0
-            self.session.is_active = False
-            self.session.save()
+            summarize_session(self.session, end_time=timezone.now(), close=True)
         except Exception as e:
             print(f"[ANALYTICS] Session finalize error: {e}")
 
@@ -144,6 +165,7 @@ def generate_report(session_id=None, hours=None):
         density_alerts=Count('id', filter=Q(density_alert=True)),
         weapon_alerts=Count('id', filter=Q(weapon_alert=True)),
         fire_alerts=Count('id', filter=Q(fire_alert=True)),
+        total_unique=Max('cumulative_count'),
     )
 
     # ---- Peak time ----
@@ -249,7 +271,7 @@ def generate_report(session_id=None, hours=None):
             "avg_count": round(agg['avg_count'] or 0, 1),
             "min_count": agg['min_count'] or 0,
             "total_snapshots": agg['total_snapshots'] or 0,
-            "total_unique_people": state.cumulative_count,
+            "total_unique_people": agg['total_unique'] or 0,
             "density_alerts": agg['density_alerts'],
             "weapon_alerts": agg['weapon_alerts'],
             "fire_alerts": agg['fire_alerts'],
@@ -260,4 +282,3 @@ def generate_report(session_id=None, hours=None):
         "high_density_events": high_density_events,
         "timeline": timeline_data,
     }
-

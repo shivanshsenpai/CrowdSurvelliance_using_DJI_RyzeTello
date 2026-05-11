@@ -30,7 +30,19 @@ class DroneState:
         self.current_count = 0
         self.cumulative_count = 0
         self.tracked_people = {}
+        self.tracked_people_ignored = {}
+        self.tracked_people_memory_slots = {}
         self.next_person_id = 0
+        self.next_startup_track_id = -1
+        self.startup_memory_limit = 10
+        self.startup_people_seen = 0
+        self.startup_people_signatures = []
+
+        # Detection quality metrics. These are model confidence estimates,
+        # surfaced to the UI as detection accuracy.
+        self.detection_accuracy = 0.0
+        self.average_confidence = 0.0
+        self.recent_detection_count = 0
 
         # Alert tracking
         self.density_alert = False

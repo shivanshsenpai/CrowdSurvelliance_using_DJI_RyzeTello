@@ -1,0 +1,43 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DroneWatch - History Login</title>
+    <link rel="stylesheet" href="{% static 'surveillance/vendor/fonts.css' %}">
+    <link rel="stylesheet" href="{% static 'surveillance/style.css' %}">
+    <link rel="stylesheet" href="{% static 'surveillance/history.css' %}">
+</head>
+<body>
+    <main class="history-login-shell">
+        <section class="history-login-panel">
+            <div class="history-brand">
+                <span class="history-brand-icon">DW</span>
+                <div>
+                    <h1>DroneWatch</h1>
+                    <span>History Access</span>
+                </div>
+            </div>
+
+            <form class="history-login-form" method="post">
+                {% csrf_token %}
+                <label>
+                    <span>Username</span>
+                    <input type="text" name="username" value="shiv" autocomplete="username" required>
+                </label>
+                <label>
+                    <span>Password</span>
+                    <input type="password" name="password" autocomplete="current-password" required>
+                </label>
+                {% if error %}
+                    <p class="history-login-error">{{ error }}</p>
+                {% endif %}
+                <button type="submit">Log In</button>
+            </form>
+
+            <a class="history-back-link" href="/">Back to live dashboard</a>
+        </section>
+    </main>
+</body>
+</html>
