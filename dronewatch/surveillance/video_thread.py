@@ -19,6 +19,16 @@ FRAME_HEIGHT = 720
 WS_FPS = 20
 DATA_FPS = 4
 DETECT_EVERY_N = 3
+MODE_DETECT_EVERY_N = {
+    "human": 3,
+    "weapon": 4,
+    "fire": 3,
+}
+
+BATTERY_POLL_INTERVAL = 15.0
+ALTITUDE_POLL_INTERVAL = 0.75
+ALTITUDE_QUERY_INTERVAL = 3.0
+TEMPERATURE_POLL_INTERVAL = 5.0
 
 # ========================= DEMO TELEMETRY =========================
 
@@ -36,13 +46,149 @@ def generate_demo_telemetry():
     state.altitude = int(50 + 30 * np.sin(t * 0.15))
 
 
+# ========================= DRONE TELEMETRY =========================
+
+def _coerce_telemetry_int(value, minimum=None, maximum=None):
+    """Convert Tello telemetry to int and reject impossible values."""
+    if value is None:
+        return None
+    try:
+        numeric = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    if minimum is not None and numeric < minimum:
+        return None
+    if maximum is not None and numeric > maximum:
+        return None
+    return numeric
+
+
+def _call_tello_query(drone, method_name):
+    """Run a Tello command-query while serialized with flight commands."""
+    with drone_state.drone_command_lock:
+        return getattr(drone, method_name)()
+
+
+def _update_battery(drone):
+    """Poll battery through the Tello command API, with state fallback."""
+    battery = None
+    try:
+        battery = _coerce_telemetry_int(
+            _call_tello_query(drone, "query_battery"), 0, 100
+        )
+    except Exception as e:
+        state.telemetry_errors += 1
+        print(f"[TELLO] Battery query failed: {e}")
+
+    if battery is None:
+        try:
+            battery = _coerce_telemetry_int(drone.get_battery(), 0, 100)
+        except Exception as e:
+            state.telemetry_errors += 1
+            print(f"[TELLO] Battery state read failed: {e}")
+
+    if battery is not None:
+        state.battery = battery
+        state.last_battery_update = time.time()
+        return True
+    return False
+
+
+def _update_altitude(drone, use_query=False):
+    """Poll altitude from height state/query, falling back to TOF distance."""
+    altitude = None
+
+    try:
+        altitude = _coerce_telemetry_int(drone.get_height(), 0, 3000)
+    except Exception:
+        altitude = None
+
+    if (altitude is None or altitude <= 0) and use_query:
+        try:
+            altitude = _coerce_telemetry_int(
+                _call_tello_query(drone, "query_height"), 0, 3000
+            )
+        except Exception as e:
+            state.telemetry_errors += 1
+            print(f"[TELLO] Height query failed: {e}")
+
+    if altitude is None or altitude <= 0:
+        try:
+            tof = _coerce_telemetry_int(drone.get_distance_tof(), 1, 1000)
+            if tof is not None:
+                altitude = tof
+        except Exception:
+            pass
+
+    if altitude is None or altitude <= 0:
+        try:
+            tof = _coerce_telemetry_int(
+                _call_tello_query(drone, "query_distance_tof"), 1, 1000
+            )
+            if tof is not None:
+                altitude = tof
+        except Exception:
+            pass
+
+    if altitude is not None:
+        state.altitude = altitude
+        state.last_altitude_update = time.time()
+        return True
+    return False
+
+
+def _update_temperature(drone):
+    try:
+        temperature = _coerce_telemetry_int(drone.get_temperature(), -20, 100)
+    except Exception:
+        temperature = None
+
+    if temperature is None:
+        try:
+            temperature = _coerce_telemetry_int(
+                _call_tello_query(drone, "query_temperature"), -20, 100
+            )
+        except Exception:
+            pass
+
+    if temperature is not None:
+        state.temperature = temperature
+
+
+def drone_telemetry_thread(drone):
+    """Poll slow Tello telemetry outside the video frame loop."""
+    next_battery = 0.0
+    next_altitude = 0.0
+    next_altitude_query = 0.0
+    next_temperature = 0.0
+
+    while state.running and not state.demo_mode:
+        now = time.time()
+
+        if now >= next_battery:
+            _update_battery(drone)
+            next_battery = now + BATTERY_POLL_INTERVAL
+
+        if now >= next_altitude:
+            use_query = now >= next_altitude_query
+            _update_altitude(drone, use_query=use_query)
+            next_altitude = now + ALTITUDE_POLL_INTERVAL
+            if use_query:
+                next_altitude_query = now + ALTITUDE_QUERY_INTERVAL
+
+        if now >= next_temperature:
+            _update_temperature(drone)
+            next_temperature = now + TEMPERATURE_POLL_INTERVAL
+
+        time.sleep(0.1)
+
+
 # ========================= VIDEO CAPTURE THREAD =========================
 
 def video_capture_thread():
     """Background thread that captures and processes frames."""
     from .detection import (
-        models_loaded, detect_humans, detect_weapons,
-        detect_fire, redraw_cached_boxes
+        detect_humans, detect_weapons, detect_fire, redraw_cached_boxes
     )
 
     drone = None
@@ -74,8 +220,15 @@ def video_capture_thread():
             if _drone_result[0] is not None:
                 drone = _drone_result[0]
                 state.connected = True
-                state.battery = drone.get_battery()
                 drone_state.drone_instance = drone
+                _update_battery(drone)
+                _update_altitude(drone, use_query=True)
+                telemetry = threading.Thread(
+                    target=drone_telemetry_thread,
+                    args=(drone,),
+                    daemon=True,
+                )
+                telemetry.start()
                 print("[INFO] Drone connected!")
             else:
                 err = _drone_error[0] or "Connection timed out"
@@ -122,9 +275,6 @@ def video_capture_thread():
                 raw = drone.get_frame_read().frame
                 raw = cv2.cvtColor(raw, cv2.COLOR_RGB2BGR)
                 frame = cv2.resize(raw, (FRAME_WIDTH, FRAME_HEIGHT))
-                state.altitude = drone.get_height()
-                state.battery = drone.get_battery()
-                state.temperature = drone.get_temperature()
             except Exception:
                 frame = np.zeros(
                     (FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8
@@ -150,7 +300,8 @@ def video_capture_thread():
         state.frame_counter += 1
 
         # Skip-frame detection
-        run_detection = (state.frame_counter % DETECT_EVERY_N == 0)
+        detect_every_n = MODE_DETECT_EVERY_N.get(state.mode, DETECT_EVERY_N)
+        run_detection = (state.frame_counter % detect_every_n == 0)
 
         # Re-import to get updated models_loaded value
         from .detection import models_loaded as _ml
@@ -206,5 +357,6 @@ def video_capture_thread():
             drone.streamoff()
         except Exception:
             pass
+        state.connected = False
     if cap:
         cap.release()

@@ -15,7 +15,7 @@ from django.views.decorators.http import require_POST, require_GET, require_http
 
 from .drone_state import state, drone_instance
 from . import drone_state as drone_state_module
-from .detection import models_loaded
+from . import detection as detection_module
 
 MOVE_DISTANCE = 30  # cm per move command
 
@@ -295,6 +295,7 @@ def api_status(request):
         "mode": state.mode,
         "battery": state.battery,
         "altitude": state.altitude,
+        "temperature": state.temperature,
         "fps": round(state.fps, 1),
         "detection_accuracy": state.detection_accuracy,
         "average_confidence": state.average_confidence,
@@ -304,7 +305,12 @@ def api_status(request):
         "startup_memory_limit": state.startup_memory_limit,
         "uptime": round(time.time() - state.session_start),
         "total_frames": state.total_frames,
-        "models_loaded": models_loaded,
+        "models_loaded": detection_module.models_loaded,
+        "weapon_model_backend": detection_module.weapon_model_backend,
+        "weapon_input_size": detection_module.WEAPON_YOLOV8_INPUT_SIZE,
+        "last_battery_update": state.last_battery_update,
+        "last_altitude_update": state.last_altitude_update,
+        "telemetry_errors": state.telemetry_errors,
     })
 
 
@@ -318,6 +324,7 @@ def api_set_mode(request, mode):
     state.density_alert = False
     state.weapon_alert = False
     state.fire_alert = False
+    state.weapon_detection_streak = 0
     state.current_count = 0
     state.tracked_people = {}
     state.tracked_people_ignored = {}
@@ -345,32 +352,33 @@ def api_drone_control(request, cmd):
 
     try:
         d = di
-        if cmd == "takeoff":
-            d.takeoff()
-        elif cmd == "land":
-            d.land()
-        elif cmd == "emergency":
-            d.emergency()
-        elif cmd == "up":
-            d.move_up(MOVE_DISTANCE)
-        elif cmd == "down":
-            d.move_down(MOVE_DISTANCE)
-        elif cmd == "left":
-            d.move_left(MOVE_DISTANCE)
-        elif cmd == "right":
-            d.move_right(MOVE_DISTANCE)
-        elif cmd == "forward":
-            d.move_forward(MOVE_DISTANCE)
-        elif cmd == "back":
-            d.move_back(MOVE_DISTANCE)
-        elif cmd == "cw":
-            d.rotate_clockwise(30)
-        elif cmd == "ccw":
-            d.rotate_counter_clockwise(30)
-        else:
-            return JsonResponse(
-                {"error": f"Unknown command: {cmd}"}, status=400
-            )
+        with drone_state_module.drone_command_lock:
+            if cmd == "takeoff":
+                d.takeoff()
+            elif cmd == "land":
+                d.land()
+            elif cmd == "emergency":
+                d.emergency()
+            elif cmd == "up":
+                d.move_up(MOVE_DISTANCE)
+            elif cmd == "down":
+                d.move_down(MOVE_DISTANCE)
+            elif cmd == "left":
+                d.move_left(MOVE_DISTANCE)
+            elif cmd == "right":
+                d.move_right(MOVE_DISTANCE)
+            elif cmd == "forward":
+                d.move_forward(MOVE_DISTANCE)
+            elif cmd == "back":
+                d.move_back(MOVE_DISTANCE)
+            elif cmd == "cw":
+                d.rotate_clockwise(30)
+            elif cmd == "ccw":
+                d.rotate_counter_clockwise(30)
+            else:
+                return JsonResponse(
+                    {"error": f"Unknown command: {cmd}"}, status=400
+                )
 
         print(f"[DRONE] Command: {cmd}")
         return JsonResponse({"status": "ok", "command": cmd})

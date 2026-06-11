@@ -12,6 +12,54 @@ const API_BASE = `http://${WS_HOST}`;
 
 const RECONNECT_DELAY = 2000;
 const MAX_CHART_POINTS = 60;
+const THEME_KEY = 'dronewatch-theme';
+
+const THEME_PALETTES = {
+    light: {
+        axis: '#64748b',
+        grid: 'rgba(15, 23, 42, 0.06)',
+        border: 'rgba(15, 23, 42, 0.10)',
+        human: { border: '#246b73', bg: 'rgba(36, 107, 115, 0.16)' },
+        weapon: { border: '#c2413a', bg: 'rgba(194, 65, 58, 0.16)' },
+        fire: { border: '#c05621', bg: 'rgba(192, 86, 33, 0.16)' },
+        alerts: ['#b7791f', '#c2413a', '#c05621'],
+        placeholder: ['rgba(15,23,42,0.06)', 'rgba(15,23,42,0.06)', 'rgba(15,23,42,0.06)'],
+        confidenceTop: 'rgba(91, 95, 151, 0.55)',
+        confidenceBottom: 'rgba(91, 95, 151, 0.08)',
+        confidenceBorder: '#5b5f97',
+    },
+    dark: {
+        axis: '#94a3b8',
+        grid: 'rgba(255,255,255,0.04)',
+        border: 'rgba(255,255,255,0.06)',
+        human: { border: '#22d3ee', bg: 'rgba(34, 211, 238, 0.25)' },
+        weapon: { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.25)' },
+        fire: { border: '#f97316', bg: 'rgba(249, 115, 22, 0.25)' },
+        alerts: ['#fbbf24', '#ef4444', '#f97316'],
+        placeholder: ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)'],
+        confidenceTop: 'rgba(167, 139, 250, 0.6)',
+        confidenceBottom: 'rgba(167, 139, 250, 0.05)',
+        confidenceBorder: '#a78bfa',
+    },
+};
+
+function getSavedTheme() {
+    return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+}
+
+function getThemePalette() {
+    return THEME_PALETTES[getSavedTheme()];
+}
+
+function applySavedTheme() {
+    const theme = getSavedTheme();
+    document.body.classList.toggle('theme-dark', theme === 'dark');
+    document.querySelectorAll('.theme-choice').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.themeChoice === theme);
+    });
+}
+
+applySavedTheme();
 
 // ========================= DOM REFERENCES =========================
 
@@ -46,6 +94,7 @@ const DOM = {
 
     // Footer
     footerMode: document.getElementById('footer-mode'),
+    themeChoices: document.querySelectorAll('.theme-choice'),
 };
 
 // ========================= STATE =========================
@@ -65,20 +114,22 @@ let alertSoundCooldown = 0;
 // ========================= CHART.JS SETUP =========================
 
 // Shared chart defaults
-Chart.defaults.color = '#94a3b8';
+const initialPalette = getThemePalette();
+Chart.defaults.color = initialPalette.axis;
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.font.size = 11;
 Chart.defaults.plugins.legend.display = false;
-Chart.defaults.scale.grid = { color: 'rgba(255,255,255,0.04)' };
-Chart.defaults.scale.border = { color: 'rgba(255,255,255,0.06)' };
+Chart.defaults.scale.grid = { color: initialPalette.grid };
+Chart.defaults.scale.border = { color: initialPalette.border };
 
 function initCharts() {
     // ---- People Count Timeline ----
     const ctxPeople = DOM.chartPeopleCanvas.getContext('2d');
+    const palette = getThemePalette();
 
     const gradientPeople = ctxPeople.createLinearGradient(0, 0, 0, 160);
-    gradientPeople.addColorStop(0, 'rgba(34, 211, 238, 0.25)');
-    gradientPeople.addColorStop(1, 'rgba(34, 211, 238, 0)');
+    gradientPeople.addColorStop(0, palette.human.bg);
+    gradientPeople.addColorStop(1, palette.human.bg.replace(/0\.\d+\)/, '0)'));
 
     chartPeople = new Chart(ctxPeople, {
         type: 'line',
@@ -87,13 +138,13 @@ function initCharts() {
             datasets: [{
                 label: 'Detections',
                 data: [],
-                borderColor: '#22d3ee',
+                borderColor: palette.human.border,
                 backgroundColor: gradientPeople,
                 fill: true,
                 tension: 0.4,
                 pointRadius: 0,
                 pointHoverRadius: 4,
-                pointHoverBackgroundColor: '#22d3ee',
+                pointHoverBackgroundColor: palette.human.border,
                 borderWidth: 2,
             }]
         },
@@ -116,8 +167,8 @@ function initCharts() {
             },
             plugins: {
                 tooltip: {
-                    backgroundColor: 'rgba(17, 24, 39, 0.95)',
-                    borderColor: 'rgba(255,255,255,0.1)',
+                    backgroundColor: 'rgba(17, 24, 39, 0.96)',
+                    borderColor: 'rgba(15,23,42,0.1)',
                     borderWidth: 1,
                     padding: 8,
                     titleFont: { family: "'JetBrains Mono', monospace", size: 10 },
@@ -136,8 +187,8 @@ function initCharts() {
             labels: ['Density', 'Weapon', 'Fire'],
             datasets: [{
                 data: [0, 0, 0],
-                backgroundColor: ['#fbbf24', '#ef4444', '#f97316'],
-                borderColor: 'rgba(10, 14, 23, 0.8)',
+                backgroundColor: palette.alerts,
+                borderColor: getSavedTheme() === 'dark' ? 'rgba(10, 14, 23, 0.8)' : '#ffffff',
                 borderWidth: 3,
                 hoverOffset: 6,
             }]
@@ -161,8 +212,8 @@ function initCharts() {
                     }
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(17, 24, 39, 0.95)',
-                    borderColor: 'rgba(255,255,255,0.1)',
+                    backgroundColor: 'rgba(17, 24, 39, 0.96)',
+                    borderColor: 'rgba(15,23,42,0.1)',
                     borderWidth: 1,
                 }
             }
@@ -173,8 +224,8 @@ function initCharts() {
     const ctxConf = DOM.chartConfidenceCanvas.getContext('2d');
 
     const gradientConf = ctxConf.createLinearGradient(0, 0, 0, 140);
-    gradientConf.addColorStop(0, 'rgba(167, 139, 250, 0.6)');
-    gradientConf.addColorStop(1, 'rgba(167, 139, 250, 0.05)');
+    gradientConf.addColorStop(0, palette.confidenceTop);
+    gradientConf.addColorStop(1, palette.confidenceBottom);
 
     chartConfidence = new Chart(ctxConf, {
         type: 'bar',
@@ -184,7 +235,7 @@ function initCharts() {
                 label: 'Confidence',
                 data: [],
                 backgroundColor: gradientConf,
-                borderColor: '#a78bfa',
+                borderColor: palette.confidenceBorder,
                 borderWidth: 1,
                 borderRadius: 3,
                 barPercentage: 0.7,
@@ -301,6 +352,8 @@ function handleTelemetry(data) {
 
     DOM.statAltitude.textContent = `${data.altitude} cm`;
     DOM.fpsBadge.textContent = `${data.fps} FPS`;
+    DOM.fpsBadge.classList.toggle('low', Number(data.fps || 0) > 0 && Number(data.fps) < 12);
+    DOM.fpsBadge.classList.toggle('medium', Number(data.fps || 0) >= 12 && Number(data.fps) < 18);
 
     const accuracy = Number(data.detection_accuracy || 0);
     updateStat(DOM.statDetectionAccuracy, `${accuracy.toFixed(1)}%`);
@@ -317,7 +370,12 @@ function handleTelemetry(data) {
 
     // Mode badge
     DOM.modeBadge.textContent = data.mode.toUpperCase();
-    DOM.footerMode.textContent = `Mode: ${data.mode.toUpperCase()}`;
+    if (data.mode === 'weapon' && data.weapon_model_backend) {
+        const inputSize = data.weapon_input_size ? ` ${data.weapon_input_size}` : '';
+        DOM.footerMode.textContent = `Mode: WEAPON | ${data.weapon_model_backend}${inputSize}`;
+    } else {
+        DOM.footerMode.textContent = `Mode: ${data.mode.toUpperCase()}`;
+    }
 
     // Update current mode if server changed it
     if (data.mode !== currentMode) {
@@ -350,10 +408,11 @@ function handleTelemetry(data) {
         chartPeople.data.datasets[0].data = values;
 
         // Dynamic color based on mode
+        const palette = getThemePalette();
         const modeColors = {
-            human: { border: '#22d3ee', bg: 'rgba(34, 211, 238, 0.25)' },
-            weapon: { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.25)' },
-            fire: { border: '#f97316', bg: 'rgba(249, 115, 22, 0.25)' },
+            human: palette.human,
+            weapon: palette.weapon,
+            fire: palette.fire,
         };
         const mc = modeColors[data.mode] || modeColors.human;
         chartPeople.data.datasets[0].borderColor = mc.border;
@@ -361,7 +420,7 @@ function handleTelemetry(data) {
         const ctx = DOM.chartPeopleCanvas.getContext('2d');
         const g = ctx.createLinearGradient(0, 0, 0, 160);
         g.addColorStop(0, mc.bg);
-        g.addColorStop(1, mc.bg.replace('0.25', '0'));
+        g.addColorStop(1, mc.bg.replace(/0\.\d+\)/, '0)'));
         chartPeople.data.datasets[0].backgroundColor = g;
 
         chartPeople.update('none');
@@ -378,13 +437,9 @@ function handleTelemetry(data) {
         const total = Object.values(data.alert_counts).reduce((a, b) => a + b, 0);
         if (total === 0) {
             chartAlerts.data.datasets[0].data = [1, 1, 1];
-            chartAlerts.data.datasets[0].backgroundColor = [
-                'rgba(255,255,255,0.05)',
-                'rgba(255,255,255,0.05)',
-                'rgba(255,255,255,0.05)',
-            ];
+            chartAlerts.data.datasets[0].backgroundColor = getThemePalette().placeholder;
         } else {
-            chartAlerts.data.datasets[0].backgroundColor = ['#fbbf24', '#ef4444', '#f97316'];
+            chartAlerts.data.datasets[0].backgroundColor = getThemePalette().alerts;
         }
         chartAlerts.update('none');
     }
@@ -440,12 +495,23 @@ function updateModeButtons() {
     });
 }
 
+function setupThemeToggle() {
+    DOM.themeChoices.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const nextTheme = btn.dataset.themeChoice === 'dark' ? 'dark' : 'light';
+            if (nextTheme === getSavedTheme()) return;
+            localStorage.setItem(THEME_KEY, nextTheme);
+            window.location.reload();
+        });
+    });
+}
+
 // ========================= ALERT LOG =========================
 
 const alertIcons = {
-    density: '👥',
-    weapon: '🔫',
-    fire: '🔥',
+    density: 'PPL',
+    weapon: 'WPN',
+    fire: 'FIR',
 };
 
 function updateAlertLog(alerts) {
@@ -464,15 +530,15 @@ function updateAlertLog(alerts) {
     if (filtered.length === 0) {
         DOM.alertList.innerHTML = `
             <div class="alert-empty">
-                <span>✅</span>
-                <p>No ${alertFilter} alerts — monitoring active</p>
+                <span>OK</span>
+                <p>No ${alertFilter} alerts - monitoring active</p>
             </div>`;
         return;
     }
 
     DOM.alertList.innerHTML = filtered.map(alert => `
         <div class="alert-item ${alert.type}">
-            <span class="alert-type-icon">${alertIcons[alert.type] || '⚠'}</span>
+            <span class="alert-type-icon">${alertIcons[alert.type] || 'AL'}</span>
             <div class="alert-content">
                 <div class="alert-message">${escapeHtml(alert.message)}</div>
                 <div class="alert-timestamp">${alert.timestamp}</div>
@@ -598,6 +664,9 @@ function init() {
 
     // Alert filter pills
     setupFilterPills();
+
+    // Theme toggle
+    setupThemeToggle();
 
     // Check source (drone vs webcam)
     updateSourceBadge();

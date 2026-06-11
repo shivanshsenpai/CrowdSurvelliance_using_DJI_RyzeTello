@@ -19,6 +19,8 @@
 - [Configuration](#configuration)
 - [Tech Stack](#tech-stack)
 
+For a short implementation explanation, see [`docs/PROJECT_WORKING.md`](docs/PROJECT_WORKING.md).
+
 ---
 
 ## Overview
@@ -101,7 +103,7 @@ The system streams live video from a DJI Ryze Tello drone (or system webcam fall
 | Mode | Model | Purpose | Alert Type |
 |------|-------|---------|------------|
 | Human | YOLOv4 (320×320) | Crowd counting + density monitoring | High density (>10 people) |
-| Weapon | YOLOv3 (320×320) | Threat detection | Critical |
+| Weapon | YOLOv8n threat model (640×640 default) | Gun/knife/grenade detection | Critical |
 | Fire | YOLOv4-tiny (320×320) | Fire/smoke detection | Critical |
 
 ### 🕹️ Drone Flight Controls
@@ -162,10 +164,10 @@ The video capture thread runs continuously at ~20 FPS:
 │                                               │
 │  2. Resize to 960×720                         │
 │                                               │
-│  3. Detection (every 3rd frame):              │
-│     ├─ Frame N: Run YOLO → draw boxes         │
-│     ├─ Frame N+1: Redraw cached boxes         │
-│     └─ Frame N+2: Redraw cached boxes         │
+│  3. Detection (frame-skipped):                │
+│     ├─ Human/fire: run every 3rd frame        │
+│     ├─ Weapon: run every 4th frame            │
+│     └─ Skipped frames redraw cached boxes     │
 │                                               │
 │  4. Update state:                             │
 │     ├─ current_count, cumulative_count        │
@@ -213,11 +215,13 @@ Frame → Blob (320×320) → YOLOv4 → Filter class 0 (person)
     → Check density threshold (>10 = alert)
 ```
 
-#### Weapon Detection (YOLOv3)
+#### Weapon Detection (YOLOv8n, YOLOv3 fallback)
 ```
-Frame → Blob (320×320) → YOLOv3 → Filter confidence > 0.5
-    → NMS (threshold 0.4) → Draw red bounding boxes
-    → Set weapon_alert flag → Generate critical alert
+Frame → YOLOv8n threat model (640×640 default) → Keep gun/knife/grenade
+    → NMS (threshold 0.35) → Draw class-labeled WEAPON?/WEAPON boxes
+    → Lower knife threshold for thin/small blades
+    → Confirm weak hits before critical alert
+    → Fallback to legacy YOLOv3 if YOLOv8 weights/package are unavailable
 ```
 
 #### Fire Detection (YOLOv4-tiny)
@@ -310,8 +314,8 @@ humanDetect/
 │       ├── yolov4-tiny_custom.cfg
 │       └── yolov4-tiny_custom_last.weights  # ~22 MB
 │
-├── server.py                       # Legacy FastAPI server (standalone)
-├── setup_models.py                 # Model download helper script
+├── docs/                           # Detailed workflow documentation
+├── requirements.txt                # Python dependencies
 ├── .gitignore
 └── README.md
 ```
@@ -345,16 +349,19 @@ pip install django channels daphne opencv-python numpy djitellopy
 
 ### 4. Download YOLO model weights
 
-The model weights are too large for git. Download them manually:
+The model weights are too large for git. Download them manually and place them
+in the `models/` directory:
+- **Person detection**: [YOLOv4 weights](https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v3_optimal/yolov4.weights) → `models/person_detection/yolov4.weights`
+- **Weapon detection**: YOLOv8n threat model → `models/weapon_detection/threat_yolov8n.pt`
+  - Source: `Subh775/Threat-Detection-YOLOv8n` on Hugging Face
+  - Fallback: legacy custom YOLOv3 → `models/weapon_detection/yolov3_training_2000.weights`
+- **Fire detection**: Custom-trained YOLOv4-tiny → `models/fire_detection/yolov4-tiny_custom_last.weights`
+
+The weapon model can be downloaded with:
 
 ```bash
-python setup_models.py
+python scripts/download_weapon_model.py
 ```
-
-Or download manually and place in the `models/` directory:
-- **Person detection**: [YOLOv4 weights](https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v3_optimal/yolov4.weights) → `models/person_detection/yolov4.weights`
-- **Weapon detection**: Custom-trained YOLOv3 → `models/weapon_detection/yolov3_training_2000.weights`
-- **Fire detection**: Custom-trained YOLOv4-tiny → `models/fire_detection/yolov4-tiny_custom_last.weights`
 
 ### 5. Run database migrations
 ```bash
@@ -447,8 +454,14 @@ Key configuration parameters in the codebase:
 | `FRAME_HEIGHT` | 720 | video_thread.py | Output frame height |
 | `WS_FPS` | 20 | video_thread.py | WebSocket video frame rate |
 | `DATA_FPS` | 4 | consumers.py | Telemetry update rate |
-| `DETECT_EVERY_N` | 3 | detection.py | Run YOLO every Nth frame |
+| `DETECT_EVERY_N` | 3 | video_thread.py | Default YOLO frame skip |
+| `MODE_DETECT_EVERY_N` | human/fire 3, weapon 4 | video_thread.py | Per-mode detection cadence |
 | `YOLO_INPUT_SIZE` | 320 | detection.py | YOLO input resolution |
+| `WEAPON_YOLOV8_INPUT_SIZE` | 640 | detection.py | Primary weapon model input resolution; can be overridden with env var |
+| `WEAPON_INPUT_SIZE` | 416 | detection.py | Legacy weapon fallback input resolution |
+| `WEAPON_YOLOV8_CLASS_CONF_THRESHOLDS` | gun/grenade 0.22, knife 0.10 | detection.py | Class-specific YOLOv8 weapon thresholds |
+| `WEAPON_CONF_THRESHOLD` | 0.22 | detection.py | Legacy weapon candidate confidence |
+| `WEAPON_STRONG_CONF_THRESHOLD` | 0.35 | detection.py | Immediate weapon alert confidence |
 | `CONF_THRESHOLD` | 0.2 | detection.py | Minimum detection confidence |
 | `NMS_THRESHOLD` | 0.5 | detection.py | Non-Maximum Suppression threshold |
 | `DENSITY_THRESHOLD` | 10 | detection.py | People count for density alert |

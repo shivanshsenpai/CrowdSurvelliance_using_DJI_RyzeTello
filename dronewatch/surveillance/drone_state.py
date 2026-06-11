@@ -3,13 +3,11 @@ DroneWatch — Global Drone State Container.
 Thread-safe state shared between video capture thread, consumers, and views.
 """
 
+import os
 import sys
 import time
 import threading
 from collections import deque
-
-
-import os
 
 DEMO_MODE = "--demo" in sys.argv or os.environ.get("DEMO", "").strip() in ("1", "true", "yes")
 
@@ -25,6 +23,9 @@ class DroneState:
         self.signal = 100
         self.fps = 0.0
         self.temperature = 0
+        self.last_battery_update = 0.0
+        self.last_altitude_update = 0.0
+        self.telemetry_errors = 0
 
         # Detection counts
         self.current_count = 0
@@ -48,6 +49,7 @@ class DroneState:
         self.density_alert = False
         self.weapon_alert = False
         self.fire_alert = False
+        self.weapon_detection_streak = 0
         self.last_alert_time = 0
         self.alert_history = deque(maxlen=200)
 
@@ -79,3 +81,4 @@ class DroneState:
 # Global singleton
 state = DroneState()
 drone_instance = None  # Global ref so API can send commands
+drone_command_lock = threading.Lock()

@@ -40,8 +40,9 @@ Step 2: YOLO Model Loading (apps.py → detection.py)
   - Person detection model:  YOLOv4 (246 MB weights)
     → Uses cv2.dnn.readNet() with OPENCV backend, CPU target
     → Extracts output layer names for forward pass
-  - Weapon detection model:  YOLOv3 (235 MB weights)
-    → Custom-trained on weapon dataset (2000 iterations)
+  - Weapon detection model:  YOLOv8n threat detector (~6 MB weights)
+    → Detects Gun, knife, and grenade classes
+    → Falls back to legacy YOLOv3 if the YOLOv8 model is unavailable
   - Fire detection model:    YOLOv4-tiny (22 MB weights)
     → Custom-trained on fire/smoke dataset
     → Uses cv2.dnn.readNetFromDarknet()
@@ -80,15 +81,16 @@ The video_capture_thread() runs continuously. Here is ONE iteration:
   ① CAPTURE FRAME
      ├─ If drone connected: drone.get_frame_read().frame
      │   → Convert RGB to BGR (OpenCV format)
-     │   → Also read: altitude, battery, temperature
+     │   → Battery/altitude/temperature are polled by telemetry thread
      ├─ If webcam active: cap.read()
      └─ If neither: generate random noise frame
 
   ② RESIZE to 960×720 pixels
 
-  ③ DETECTION (every 3rd frame for performance):
-     Frame counter % 3 == 0 → Run YOLO
-     Frame counter % 3 != 0 → Redraw cached bounding boxes from last run
+  ③ DETECTION (frame-skipped for performance):
+     Human/fire mode: run YOLO every 3rd frame
+     Weapon mode: run YOLO every 4th frame
+     Skipped frames → Redraw cached bounding boxes from last run
 
   ④ YOLO DETECTION (based on current mode):
 
@@ -107,12 +109,15 @@ The video_capture_thread() runs continuously. Here is ONE iteration:
        h. Check density threshold (>10 people = alert)
 
      WEAPON MODE (detect_weapons):
-       a. Create blob: 320×320
-       b. Forward pass through YOLOv3
-       c. Filter: confidence > 0.5
-       d. NMS (threshold 0.4)
-       e. Draw red bounding boxes + "WEAPON XX%" labels
-       f. Set weapon_alert flag → generate critical alert
+       a. Run YOLOv8n threat model at 640×640 by default
+       b. Keep Gun, knife, and grenade detections
+       c. Filter with class-specific confidence thresholds
+          - Gun/grenade: 0.22
+          - Knife: 0.10
+       d. NMS (threshold 0.35)
+       e. Draw class-labeled orange "WEAPON?" boxes for weak hits
+       f. Draw class-labeled red "WEAPON" boxes for stronger hits
+       g. Confirm weak hits across frames before critical alert
 
      FIRE MODE (detect_fire):
        a. Create blob: 320×320
@@ -186,7 +191,7 @@ Alerts are generated when detection thresholds are exceeded:
     Message:  "High crowd density! X people detected"
 
   WEAPON ALERT (severity: critical)
-    Trigger:  Any weapon detection with confidence > 0.5
+    Trigger:  Strong weapon hit or repeated weaker weapon hits
     Cooldown: 3 seconds between alerts
     Message:  "WEAPON DETECTED IN FRAME!"
 
@@ -384,13 +389,14 @@ When the drone is connected (LIVE mode):
 ================================================================================
 
   Frame Skipping:
-    YOLO runs on every 3rd frame (DETECT_EVERY_N = 3). On skipped frames,
-    cached bounding boxes are redrawn. This gives ~3x FPS boost with
-    minimal visual impact.
+    Human/fire YOLO runs every 3rd frame. Weapon YOLO runs every 4th frame
+    to improve small-object responsiveness. On skipped frames, cached
+    bounding boxes are redrawn.
 
   Reduced Input Size:
-    YOLO input is 320×320 instead of 416×416 or 608×608. This gives
-    a significant speedup with acceptable accuracy for surveillance.
+    Human/fire inputs use 320×320 for speed. Weapon detection uses the
+    YOLOv8n model at 640×640 by default to keep CPU load reasonable.
+    For sharper knife tests, set WEAPON_YOLOV8_INPUT_SIZE=768 before launch.
 
   JPEG Compression:
     WebSocket frames use JPEG quality 70 for bandwidth efficiency.

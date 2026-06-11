@@ -62,9 +62,9 @@ class SurveillanceConfig(AppConfig):
                 user.is_staff = True
                 user.is_superuser = True
                 user.is_active = True
-                user.set_password("pass")
+                user.set_password("8449")
                 user.save()
-                print("[INFO] Admin user ready: shiv / pass")
+                print("[INFO] Admin user ready: shiv / 8449")
             except (OperationalError, ProgrammingError) as e:
                 print(f"[WARN] Admin user not created yet: {e}")
                 print("[WARN] Run 'python manage.py migrate' first")

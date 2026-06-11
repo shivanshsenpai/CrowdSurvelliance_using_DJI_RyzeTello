@@ -16,7 +16,7 @@
     <header id="main-header">
         <div class="header-left">
             <div class="logo">
-                <span class="logo-icon">🛸</span>
+                <span class="logo-icon">DW</span>
                 <div class="logo-text">
                     <h1>DroneWatch</h1>
                     <span class="logo-subtitle">AI Surveillance System</span>
@@ -26,22 +26,26 @@
         <div class="header-center">
             <div class="mode-switcher" id="mode-switcher">
                 <button class="mode-btn active" data-mode="human" id="btn-mode-human">
-                    <span class="mode-icon">👤</span>
+                    <span class="mode-icon">H</span>
                     <span class="mode-label">Human</span>
                 </button>
                 <button class="mode-btn" data-mode="weapon" id="btn-mode-weapon">
-                    <span class="mode-icon">🔫</span>
+                    <span class="mode-icon">W</span>
                     <span class="mode-label">Weapon</span>
                 </button>
                 <button class="mode-btn" data-mode="fire" id="btn-mode-fire">
-                    <span class="mode-icon">🔥</span>
+                    <span class="mode-icon">F</span>
                     <span class="mode-label">Fire</span>
                 </button>
             </div>
         </div>
         <div class="header-right">
+            <div class="theme-switch" id="theme-switch" role="group" aria-label="Theme">
+                <button class="theme-choice active" type="button" data-theme-choice="light">Light</button>
+                <button class="theme-choice" type="button" data-theme-choice="dark">Dark</button>
+            </div>
             <a href="/analytics" class="analytics-link" id="analytics-link" title="View Analytics Report">
-                <span>📊</span> Analytics
+                <span>AN</span> Analytics
             </a>
             <a href="/history/" class="analytics-link" id="history-link" title="View Past History">
                 <span>HIS</span> History
@@ -83,13 +87,13 @@
             <div class="drone-controls" id="drone-controls">
                 <div class="control-group">
                     <button class="ctrl-btn takeoff" id="btn-takeoff" onclick="droneCommand('takeoff')">
-                        <span>🛫</span> Takeoff
+                        <span>UP</span> Takeoff
                     </button>
                     <button class="ctrl-btn land" id="btn-land" onclick="droneCommand('land')">
-                        <span>🛬</span> Land
+                        <span>DN</span> Land
                     </button>
                     <button class="ctrl-btn emergency" id="btn-emergency" onclick="droneCommand('emergency')">
-                        <span>🚨</span> Emergency
+                        <span>STOP</span> Emergency
                     </button>
                 </div>
                 <div class="control-group movement">
@@ -124,21 +128,21 @@
             <!-- Stats Cards Row -->
             <div class="stats-grid" id="stats-grid">
                 <div class="stat-card" id="card-people">
-                    <div class="stat-icon">👥</div>
+                    <div class="stat-icon">PPL</div>
                     <div class="stat-info">
                         <span class="stat-value" id="stat-current-count">0</span>
                         <span class="stat-label">Current People</span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-total">
-                    <div class="stat-icon">📊</div>
+                    <div class="stat-icon">TOT</div>
                     <div class="stat-info">
                         <span class="stat-value" id="stat-cumulative-count">0</span>
                         <span class="stat-label">Total Tracked</span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-battery">
-                    <div class="stat-icon">🔋</div>
+                    <div class="stat-icon">BAT</div>
                     <div class="stat-info">
                         <span class="stat-value" id="stat-battery">--%</span>
                         <span class="stat-label">Battery</span>
@@ -148,21 +152,21 @@
                     </div>
                 </div>
                 <div class="stat-card" id="card-altitude">
-                    <div class="stat-icon">📡</div>
+                    <div class="stat-icon">ALT</div>
                     <div class="stat-info">
                         <span class="stat-value" id="stat-altitude">-- cm</span>
                         <span class="stat-label">Altitude</span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-accuracy">
-                    <div class="stat-icon">A%</div>
+                    <div class="stat-icon">ACC</div>
                     <div class="stat-info">
                         <span class="stat-value" id="stat-detection-accuracy">0.0%</span>
                         <span class="stat-label">Detection Accuracy</span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-memory">
-                    <div class="stat-icon">10</div>
+                    <div class="stat-icon">MEM</div>
                     <div class="stat-info">
                         <span class="stat-value" id="stat-startup-memory">0/10</span>
                         <span class="stat-label">Startup Memory</span>
@@ -207,7 +211,7 @@
     <section class="alert-panel" id="alert-panel">
         <div class="section-header">
             <h2>
-                <span class="alert-icon">🚨</span> Alert Log
+                <span class="alert-icon">AL</span> Alert Log
                 <span class="alert-count-badge" id="total-alert-count">0</span>
             </h2>
             <div class="alert-filter-pills">
@@ -219,8 +223,8 @@
         </div>
         <div class="alert-list" id="alert-list">
             <div class="alert-empty">
-                <span>✅</span>
-                <p>No alerts yet — monitoring active</p>
+                <span>OK</span>
+                <p>No alerts yet - monitoring active</p>
             </div>
         </div>
     </section>
@@ -236,6 +240,7 @@
         <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbsGczFj2markup" type="audio/wav">
     </audio>
 
+    <script src="{% static 'surveillance/theme.js' %}"></script>
     <script src="{% static 'surveillance/app.js' %}"></script>
 </body>
 </html>

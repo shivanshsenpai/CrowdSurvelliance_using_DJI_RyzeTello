@@ -4,10 +4,9 @@ This document describes how the current DroneWatch system runs end to end:
 startup, video capture, AI detection, startup-person memory, live dashboard
 telemetry, persistence, analytics, and the custom history records page.
 
-The main application is the Django + Channels project in `dronewatch/`.
-The root-level `server.py` and `dashboard/` folder are legacy standalone
-paths that mirror much of the live dashboard behavior, but the maintained app
-is the Django project.
+The application is the Django + Channels project in `dronewatch/`.
+Legacy standalone FastAPI/dashboard experiment paths were removed so the repo
+tracks only the maintained Django runtime.
 
 ---
 
@@ -51,8 +50,6 @@ humanDetect/
 |   |-- weapon_detection/               YOLOv3 weapon model
 |   |-- fire_detection/                 YOLOv4-tiny fire model
 |
-|-- dashboard/                          Legacy frontend for server.py
-|-- server.py                           Legacy standalone backend
 |-- requirements.txt                    Python dependencies
 ```
 
@@ -179,7 +176,7 @@ The app auto-prepares a development superuser during server startup:
 
 ```text
 username: shiv
-password: pass
+password: 8449
 ```
 
 This only succeeds after auth migrations have been applied.
@@ -195,7 +192,7 @@ manage.py
   -> app registry loads surveillance.apps.SurveillanceConfig
   -> SurveillanceConfig.ready() checks whether this is a runtime server
   -> load YOLO models
-  -> ensure superuser shiv/pass exists
+  -> ensure superuser shiv/8449 exists
   -> start video_capture_thread as daemon thread
   -> start AnalyticsRecorder 2 seconds later
   -> server accepts HTTP and WebSocket traffic
@@ -281,7 +278,8 @@ SQLite by the analytics recorder.
 Startup source selection:
 
 1. If not in demo mode, try a DJI Tello connection with an 8 second timeout.
-2. If Tello works, use `get_frame_read().frame`, battery, height, temperature.
+2. If Tello works, use `get_frame_read().frame` for video.
+   A separate telemetry thread polls battery, height/TOF altitude, and temperature.
 3. If Tello fails, switch to demo mode.
 4. In demo mode, try webcams `0`, `1`, and `2`.
 5. If no webcam opens, produce synthetic dark/noisy frames.
@@ -303,7 +301,8 @@ calculate FPS
 sleep to target WS_FPS
 ```
 
-Detection runs every third frame for performance. Skipped frames reuse the last
+Detection is frame-skipped for performance. Human/fire modes run every third
+frame, weapon mode runs every fourth frame, and skipped frames reuse the last
 accepted boxes so overlays remain visible.
 
 ---
@@ -315,7 +314,8 @@ accepted boxes so overlays remain visible.
 | Mode | Config | Weights |
 | --- | --- | --- |
 | Human | `models/person_detection/yolov4.cfg` | `models/person_detection/yolov4.weights` |
-| Weapon | `models/weapon_detection/yolov3_testing.cfg` | `models/weapon_detection/yolov3_training_2000.weights` |
+| Weapon | YOLOv8n threat model | `models/weapon_detection/threat_yolov8n.pt` |
+| Weapon fallback | `models/weapon_detection/yolov3_testing.cfg` | `models/weapon_detection/yolov3_training_2000.weights` |
 | Fire | `models/fire_detection/yolov4-tiny_custom.cfg` | `models/fire_detection/yolov4-tiny_custom_last.weights` |
 
 The output layer names are cached globally in `detection.py`.
@@ -395,11 +395,15 @@ True accuracy would require labeled ground-truth data. The current value answers
 Weapon mode:
 
 ```text
-weaponNet.forward()
-keep detections with confidence > 0.5
-run NMSBoxes()
-draw red WEAPON label
-state.weapon_alert = True if any accepted detection exists
+weaponYolo.predict()
+keep Gun, knife, and grenade classes at 640x640 input by default
+use class-specific thresholds: gun/grenade 0.22, knife 0.10
+optionally set WEAPON_YOLOV8_INPUT_SIZE=768 for sharper knife testing
+fallback to legacy weaponNet.forward() if YOLOv8 is unavailable
+run NMSBoxes() with a 0.35 NMS threshold
+draw orange class-labeled WEAPON? labels for weak hits
+draw red class-labeled WEAPON labels for stronger hits
+state.weapon_alert = True after a strong hit or repeated weak hits
 append confidence values
 update detection quality
 ```
@@ -662,7 +666,7 @@ The page shows:
 8. Latest 200 snapshot rows.
 
 The login uses Django auth and sessions, not a hard-coded fake login. The app
-creates the development user `shiv/pass` on server startup after migrations.
+creates the development user `shiv/8449` on server startup after migrations.
 
 ---
 
@@ -732,16 +736,10 @@ If there is no drone instance, the API returns:
 
 ---
 
-## 22. Legacy `server.py`
+## 22. Removed Legacy Paths
 
-`server.py` is the standalone legacy backend. It has also been updated with:
-
-1. Startup-person memory.
-2. Detection confidence/accuracy telemetry.
-3. Matching dashboard cards in `dashboard/`.
-
-However, the custom history page and Django auth flow belong to the Django app.
-Use `dronewatch/manage.py` for the current full system.
+The standalone FastAPI backend and duplicate static dashboard were removed.
+Use `dronewatch/manage.py` for the full system.
 
 ---
 
@@ -780,8 +778,8 @@ If login fails:
 
 1. Run migrations.
 2. Restart the server.
-3. Look for `Admin user ready: shiv / pass`.
-4. Log in with `shiv` and `pass`.
+3. Look for `Admin user ready: shiv / 8449`.
+4. Log in with `shiv` and `8449`.
 
 If Python points at the Windows Store alias, use a fixed Python installation or
 recreate the virtual environment. The app code expects a working Django runtime.
@@ -795,7 +793,7 @@ User starts Django server
   -> settings and app registry load
   -> runtime startup guard passes
   -> YOLO models load
-  -> shiv/pass superuser is ensured
+  -> shiv/8449 superuser is ensured
   -> video thread starts
   -> analytics recorder starts after 2 seconds
   -> stale active sessions are summarized and closed
@@ -811,4 +809,3 @@ User starts Django server
   -> history page reads sessions and snapshots from SQLite
   -> user reviews past records
 ```
-

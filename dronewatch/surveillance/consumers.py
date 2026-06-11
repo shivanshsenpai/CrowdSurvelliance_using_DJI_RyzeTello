@@ -78,10 +78,20 @@ class DataConsumer(AsyncWebsocketConsumer):
                 except Exception:
                     pass
 
+                _weapon_backend = "unknown"
+                _weapon_input_size = None
+                try:
+                    from . import detection as _det
+                    _weapon_backend = _det.weapon_model_backend
+                    _weapon_input_size = _det.WEAPON_YOLOV8_INPUT_SIZE
+                except Exception:
+                    pass
+
                 data = {
                     "mode": state.mode,
                     "battery": state.battery,
                     "altitude": state.altitude,
+                    "temperature": state.temperature,
                     "fps": round(state.fps, 1),
                     "detection_accuracy": state.detection_accuracy,
                     "average_confidence": state.average_confidence,
@@ -104,6 +114,9 @@ class DataConsumer(AsyncWebsocketConsumer):
                     "demo_mode": state.demo_mode,
                     "session_id": _session_id,
                     "recording_active": _recording,
+                    "telemetry_errors": state.telemetry_errors,
+                    "weapon_model_backend": _weapon_backend,
+                    "weapon_input_size": _weapon_input_size,
                 }
                 await self.send(text_data=json.dumps(data))
                 await asyncio.sleep(1.0 / DATA_FPS)
