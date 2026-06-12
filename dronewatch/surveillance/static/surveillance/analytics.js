@@ -56,14 +56,49 @@ let chartHourly = null;
 let chartAlertDist = null;
 let currentReportData = null;
 
+// ========================= THEME PALETTES =========================
+
+const THEME_KEY = 'dronewatch-theme';
+const THEME_PALETTES = {
+    light: {
+        axis: '#64748b',
+        grid: 'rgba(15, 23, 42, 0.06)',
+        border: 'rgba(15, 23, 42, 0.10)',
+        timeline: { border: '#246b73', bg: 'rgba(36, 107, 115, 0.16)' },
+        avg: { border: '#246b73', bg: 'rgba(36, 107, 115, 0.5)' },
+        peak: { border: '#5b5f97', bg: 'rgba(91, 95, 151, 0.35)' },
+        alerts: ['#b7791f', '#c2413a', '#c05621'],
+        placeholder: ['rgba(15,23,42,0.06)', 'rgba(15,23,42,0.06)', 'rgba(15,23,42,0.06)'],
+    },
+    dark: {
+        axis: '#94a3b8',
+        grid: 'rgba(255,255,255,0.04)',
+        border: 'rgba(255,255,255,0.06)',
+        timeline: { border: '#22d3ee', bg: 'rgba(34, 211, 238, 0.3)' },
+        avg: { border: '#22d3ee', bg: 'rgba(34, 211, 238, 0.5)' },
+        peak: { border: '#a78bfa', bg: 'rgba(167, 139, 250, 0.35)' },
+        alerts: ['#fbbf24', '#ef4444', '#f97316'],
+        placeholder: ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)'],
+    }
+};
+
+function getSavedTheme() {
+    return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+}
+
+function getThemePalette() {
+    return THEME_PALETTES[getSavedTheme()];
+}
+
 // ========================= CHART DEFAULTS =========================
 
-Chart.defaults.color = '#94a3b8';
+const initialPalette = getThemePalette();
+Chart.defaults.color = initialPalette.axis;
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.font.size = 11;
 Chart.defaults.plugins.legend.display = false;
-Chart.defaults.scale.grid = { color: 'rgba(255,255,255,0.04)' };
-Chart.defaults.scale.border = { color: 'rgba(255,255,255,0.06)' };
+Chart.defaults.scale.grid = { color: initialPalette.grid };
+Chart.defaults.scale.border = { color: initialPalette.border };
 
 // ========================= LOAD REPORT =========================
 
@@ -151,9 +186,10 @@ function renderTimelineChart(timeline) {
     const labels = timeline.map(d => d.timestamp);
     const values = timeline.map(d => d.count);
 
+    const palette = getThemePalette();
     const gradient = ctx.createLinearGradient(0, 0, 0, 240);
-    gradient.addColorStop(0, 'rgba(34, 211, 238, 0.3)');
-    gradient.addColorStop(1, 'rgba(34, 211, 238, 0)');
+    gradient.addColorStop(0, palette.timeline.bg);
+    gradient.addColorStop(1, palette.timeline.bg.replace(/0\.\d+\)/, '0)'));
 
     chartTimeline = new Chart(ctx, {
         type: 'line',
@@ -162,13 +198,13 @@ function renderTimelineChart(timeline) {
             datasets: [{
                 label: 'People Count',
                 data: values,
-                borderColor: '#22d3ee',
+                borderColor: palette.timeline.border,
                 backgroundColor: gradient,
                 fill: true,
                 tension: 0.35,
                 pointRadius: values.length > 100 ? 0 : 2,
                 pointHoverRadius: 5,
-                pointHoverBackgroundColor: '#22d3ee',
+                pointHoverBackgroundColor: palette.timeline.border,
                 borderWidth: 2,
             }]
         },
@@ -220,6 +256,7 @@ function renderHourlyChart(hourlyData) {
     const labels = hourlyData.map(d => d.hour);
     const avgValues = hourlyData.map(d => d.avg);
     const peakValues = hourlyData.map(d => d.peak);
+    const palette = getThemePalette();
 
     chartHourly = new Chart(ctx, {
         type: 'bar',
@@ -229,8 +266,8 @@ function renderHourlyChart(hourlyData) {
                 {
                     label: 'Average',
                     data: avgValues,
-                    backgroundColor: 'rgba(34, 211, 238, 0.5)',
-                    borderColor: '#22d3ee',
+                    backgroundColor: palette.avg.bg,
+                    borderColor: palette.avg.border,
                     borderWidth: 1,
                     borderRadius: 4,
                     barPercentage: 0.6,
@@ -238,8 +275,8 @@ function renderHourlyChart(hourlyData) {
                 {
                     label: 'Peak',
                     data: peakValues,
-                    backgroundColor: 'rgba(167, 139, 250, 0.35)',
-                    borderColor: '#a78bfa',
+                    backgroundColor: palette.peak.bg,
+                    borderColor: palette.peak.border,
                     borderWidth: 1,
                     borderRadius: 4,
                     barPercentage: 0.6,
@@ -300,6 +337,7 @@ function renderAlertDistChart(summary) {
     const fire = summary.fire_alerts || 0;
     const total = density + weapon + fire;
 
+    const palette = getThemePalette();
     chartAlertDist = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -307,9 +345,9 @@ function renderAlertDistChart(summary) {
             datasets: [{
                 data: total > 0 ? [density, weapon, fire] : [1, 1, 1],
                 backgroundColor: total > 0
-                    ? ['#fbbf24', '#ef4444', '#f97316']
-                    : ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)'],
-                borderColor: 'rgba(10, 14, 23, 0.8)',
+                    ? palette.alerts
+                    : palette.placeholder,
+                borderColor: getSavedTheme() === 'dark' ? 'rgba(10, 14, 23, 0.8)' : '#ffffff',
                 borderWidth: 3,
                 hoverOffset: 6,
             }]
@@ -473,6 +511,68 @@ function startAutoRefresh() {
     }, 30000);
 }
 
+// ========================= THEME SWITCH EVENT =========================
+
+function updateChartThemes(theme) {
+    const palette = THEME_PALETTES[theme];
+    if (!palette) return;
+
+    Chart.defaults.color = palette.axis;
+    Chart.defaults.scale.grid.color = palette.grid;
+    Chart.defaults.scale.border.color = palette.border;
+
+    [chartTimeline, chartHourly, chartAlertDist].forEach(chart => {
+        if (!chart) return;
+        if (chart.options.scales) {
+            Object.values(chart.options.scales).forEach(scale => {
+                if (scale.ticks) scale.ticks.color = palette.axis;
+                if (scale.grid) scale.grid.color = palette.grid;
+                if (scale.border) scale.border.color = palette.border;
+            });
+        }
+    });
+
+    if (chartTimeline) {
+        chartTimeline.data.datasets[0].borderColor = palette.timeline.border;
+        chartTimeline.data.datasets[0].pointHoverBackgroundColor = palette.timeline.border;
+        const ctx = ADOM.chartTimelineCanvas.getContext('2d');
+        const g = ctx.createLinearGradient(0, 0, 0, 240);
+        g.addColorStop(0, palette.timeline.bg);
+        g.addColorStop(1, palette.timeline.bg.replace(/0\.\d+\)/, '0)'));
+        chartTimeline.data.datasets[0].backgroundColor = g;
+        chartTimeline.update('none');
+    }
+
+    if (chartHourly) {
+        chartHourly.data.datasets[0].backgroundColor = palette.avg.bg;
+        chartHourly.data.datasets[0].borderColor = palette.avg.border;
+        chartHourly.data.datasets[1].backgroundColor = palette.peak.bg;
+        chartHourly.data.datasets[1].borderColor = palette.peak.border;
+        if (chartHourly.options.plugins && chartHourly.options.plugins.legend && chartHourly.options.plugins.legend.labels) {
+            chartHourly.options.plugins.legend.labels.color = palette.axis;
+        }
+        chartHourly.update('none');
+    }
+
+    if (chartAlertDist) {
+        chartAlertDist.data.datasets[0].borderColor = theme === 'dark' ? 'rgba(10, 14, 23, 0.8)' : '#ffffff';
+        const currentBg = chartAlertDist.data.datasets[0].backgroundColor;
+        if (Array.isArray(currentBg)) {
+            const isPlaceholder = currentBg.includes(THEME_PALETTES.light.placeholder[0]) || 
+                                currentBg.includes(THEME_PALETTES.dark.placeholder[0]);
+            if (isPlaceholder) {
+                chartAlertDist.data.datasets[0].backgroundColor = palette.placeholder;
+            } else {
+                chartAlertDist.data.datasets[0].backgroundColor = palette.alerts;
+            }
+        }
+        if (chartAlertDist.options.plugins && chartAlertDist.options.plugins.legend && chartAlertDist.options.plugins.legend.labels) {
+            chartAlertDist.options.plugins.legend.labels.color = palette.axis;
+        }
+        chartAlertDist.update('none');
+    }
+}
+
 // ========================= INIT =========================
 
 function init() {
@@ -480,6 +580,12 @@ function init() {
     loadReport(null);
     loadSessions();
     startAutoRefresh();
+    
+    // Register theme switch event listener
+    window.addEventListener('themeChanged', (e) => {
+        updateChartThemes(e.detail.theme);
+    });
+    
     console.log('[Analytics] Ready!');
 }
 

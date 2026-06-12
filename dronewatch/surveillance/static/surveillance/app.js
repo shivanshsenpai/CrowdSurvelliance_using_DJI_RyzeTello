@@ -61,6 +61,72 @@ function applySavedTheme() {
 
 applySavedTheme();
 
+function updateChartThemes(theme) {
+    const palette = THEME_PALETTES[theme];
+    if (!palette) return;
+
+    Chart.defaults.color = palette.axis;
+    Chart.defaults.scale.grid.color = palette.grid;
+    Chart.defaults.scale.border.color = palette.border;
+
+    [chartPeople, chartAlerts, chartConfidence].forEach(chart => {
+        if (!chart) return;
+        if (chart.options.scales) {
+            Object.values(chart.options.scales).forEach(scale => {
+                if (scale.ticks) scale.ticks.color = palette.axis;
+                if (scale.grid) scale.grid.color = palette.grid;
+                if (scale.border) scale.border.color = palette.border;
+            });
+        }
+    });
+
+    if (chartPeople) {
+        const modeColors = {
+            human: palette.human,
+            weapon: palette.weapon,
+            fire: palette.fire,
+        };
+        const mc = modeColors[currentMode] || modeColors.human;
+        chartPeople.data.datasets[0].borderColor = mc.border;
+        chartPeople.data.datasets[0].pointHoverBackgroundColor = mc.border;
+        
+        const ctx = DOM.chartPeopleCanvas.getContext('2d');
+        const g = ctx.createLinearGradient(0, 0, 0, 160);
+        g.addColorStop(0, mc.bg);
+        g.addColorStop(1, mc.bg.replace(/0\.\d+\)/, '0)'));
+        chartPeople.data.datasets[0].backgroundColor = g;
+        chartPeople.update('none');
+    }
+
+    if (chartAlerts) {
+        chartAlerts.data.datasets[0].borderColor = theme === 'dark' ? 'rgba(10, 14, 23, 0.8)' : '#ffffff';
+        const currentBg = chartAlerts.data.datasets[0].backgroundColor;
+        if (Array.isArray(currentBg)) {
+            const isPlaceholder = currentBg.includes(THEME_PALETTES.light.placeholder[0]) || 
+                                currentBg.includes(THEME_PALETTES.dark.placeholder[0]);
+            if (isPlaceholder) {
+                chartAlerts.data.datasets[0].backgroundColor = palette.placeholder;
+            } else {
+                chartAlerts.data.datasets[0].backgroundColor = palette.alerts;
+            }
+        }
+        if (chartAlerts.options.plugins && chartAlerts.options.plugins.legend && chartAlerts.options.plugins.legend.labels) {
+            chartAlerts.options.plugins.legend.labels.color = palette.axis;
+        }
+        chartAlerts.update('none');
+    }
+
+    if (chartConfidence) {
+        chartConfidence.data.datasets[0].borderColor = palette.confidenceBorder;
+        const ctx = DOM.chartConfidenceCanvas.getContext('2d');
+        const g = ctx.createLinearGradient(0, 0, 0, 140);
+        g.addColorStop(0, palette.confidenceTop);
+        g.addColorStop(1, palette.confidenceBottom);
+        chartConfidence.data.datasets[0].backgroundColor = g;
+        chartConfidence.update('none');
+    }
+}
+
 // ========================= DOM REFERENCES =========================
 
 const DOM = {
@@ -496,13 +562,8 @@ function updateModeButtons() {
 }
 
 function setupThemeToggle() {
-    DOM.themeChoices.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const nextTheme = btn.dataset.themeChoice === 'dark' ? 'dark' : 'light';
-            if (nextTheme === getSavedTheme()) return;
-            localStorage.setItem(THEME_KEY, nextTheme);
-            window.location.reload();
-        });
+    window.addEventListener('themeChanged', (e) => {
+        updateChartThemes(e.detail.theme);
     });
 }
 

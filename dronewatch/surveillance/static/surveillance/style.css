@@ -1100,25 +1100,37 @@ body::before {
 .theme-switch {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    padding: 0.2rem;
+    gap: 2px;
+    padding: 2px;
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
+    border-radius: 20px;
     background: var(--bg-elevated);
 }
 
 .theme-choice {
-    min-width: 3.25rem;
-    padding: 0.36rem 0.65rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: 0;
-    border-radius: 4px;
+    border-radius: 50%;
     background: transparent;
     color: var(--text-secondary);
-    font-family: inherit;
-    font-size: 0.72rem;
-    font-weight: 700;
     cursor: pointer;
     transition: all var(--transition-fast);
+    padding: 0;
+}
+
+.theme-choice svg {
+    width: 0.95rem;
+    height: 0.95rem;
+    stroke-width: 2.2;
+    transition: transform 0.2s ease;
+}
+
+.theme-choice:hover svg {
+    transform: scale(1.1);
 }
 
 .theme-choice.active {
@@ -1257,9 +1269,7 @@ body::before,
 .export-btn,
 .pill,
 .ctrl-btn,
-.demo-badge,
-.theme-switch,
-.theme-choice {
+.demo-badge {
     border-radius: var(--radius-sm);
 }
 
@@ -1288,8 +1298,7 @@ body::before,
 .fps-badge,
 .resolution-badge,
 .ctrl-btn,
-.demo-badge,
-.theme-choice {
+.demo-badge {
     background: #ffffff;
     border-color: var(--border-subtle);
     color: var(--text-secondary);
@@ -1297,8 +1306,7 @@ body::before,
 }
 
 .analytics-link:hover,
-.export-btn:hover,
-.theme-choice:hover {
+.export-btn:hover {
     background: #f8fafc;
     border-color: var(--border-light);
     color: var(--text-primary);
@@ -1621,8 +1629,7 @@ body.theme-dark .fps-badge,
 body.theme-dark .resolution-badge,
 body.theme-dark .ctrl-btn,
 body.theme-dark .demo-badge,
-body.theme-dark .theme-switch,
-body.theme-dark .theme-choice {
+body.theme-dark .theme-switch {
     background: var(--bg-elevated);
     border-color: var(--border-subtle);
     color: var(--text-secondary);
