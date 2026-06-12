@@ -13,7 +13,15 @@
     <header id="main-header">
         <div class="header-left">
             <div class="logo">
-                <span class="logo-icon">DW</span>
+                <span class="logo-icon">
+                    <svg class="logo-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 2v20"/>
+                        <path d="M2 12h20"/>
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="m19 5-3.5 3.5M5 19l3.5-3.5M19 19l-3.5-3.5M5 5l3.5-3.5"/>
+                    </svg>
+                </span>
                 <div class="logo-text">
                     <h1>DroneWatch</h1>
                     <span class="logo-subtitle">Past History Records</span>
@@ -35,6 +43,10 @@
                 <button class="theme-choice" type="button" data-theme-choice="dark" title="Dark Mode">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
                 </button>
+            </div>
+            <div class="system-time" id="system-time">
+                <span class="time-label">SYS TIME</span>
+                <span class="time-value" id="header-clock">00:00:00</span>
             </div>
             <span class="history-user">Logged in as {{ request.user.username }}</span>
             <a href="/history/logout/" class="analytics-link">Logout</a>
@@ -170,8 +182,20 @@
                     <a href="/" class="analytics-link">Open Dashboard</a>
                 </div>
             {% endif %}
-        </section>
     </main>
+    <!-- ==================== FOOTER ==================== -->
+    <footer id="main-footer">
+        <div class="footer-left">
+            <span>© 2026 DRONEWATCH SYSTEMS INC. • SECURE AI NETWORK</span>
+            <span class="security-badge"><span class="badge-dot"></span> ENCRYPTED</span>
+        </div>
+        <div class="footer-center">
+            <span>AUTHORIZED USE ONLY • SUBJECT TO CONTINUOUS AUDITING</span>
+        </div>
+        <div class="footer-right">
+            <span>DATABASE: SQLITE3</span>
+        </div>
+    </footer>
     <script src="{% static 'surveillance/theme.js' %}"></script>
 </body>
 </html>

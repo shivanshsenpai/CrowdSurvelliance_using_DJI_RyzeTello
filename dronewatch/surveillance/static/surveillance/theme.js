@@ -41,4 +41,21 @@
             }
         });
     });
+
+    function startHeaderClock() {
+        const clockEl = document.getElementById('header-clock');
+        if (!clockEl) return;
+        function updateClock() {
+            const now = new Date();
+            clockEl.textContent = now.toLocaleTimeString();
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+    }
+    
+    if (document.body) {
+        startHeaderClock();
+    } else {
+        document.addEventListener('DOMContentLoaded', startHeaderClock, { once: true });
+    }
 }());

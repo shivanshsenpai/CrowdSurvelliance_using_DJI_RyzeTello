@@ -16,7 +16,15 @@
     <header id="main-header">
         <div class="header-left">
             <div class="logo">
-                <span class="logo-icon">DW</span>
+                <span class="logo-icon">
+                    <svg class="logo-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 2v20"/>
+                        <path d="M2 12h20"/>
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="m19 5-3.5 3.5M5 19l3.5-3.5M19 19l-3.5-3.5M5 5l3.5-3.5"/>
+                    </svg>
+                </span>
                 <div class="logo-text">
                     <h1>DroneWatch</h1>
                     <span class="logo-subtitle">AI Surveillance System</span>
@@ -54,6 +62,10 @@
             <a href="/history/" class="analytics-link" id="history-link" title="View Past History">
                 <span>HIS</span> History
             </a>
+            <div class="system-time" id="system-time">
+                <span class="time-label">SYS TIME</span>
+                <span class="time-value" id="header-clock">00:00:00</span>
+            </div>
             <div class="connection-status" id="connection-status">
                 <span class="status-dot"></span>
                 <span class="status-text">Connecting...</span>
@@ -235,8 +247,16 @@
 
     <!-- ==================== FOOTER ==================== -->
     <footer id="main-footer">
-        <span>DroneWatch v1.0 — AI Surveillance System by Shivansh Sharma (Django)</span>
-        <span id="footer-mode">Mode: HUMAN</span>
+        <div class="footer-left">
+            <span>© 2026 DRONEWATCH SYSTEMS INC. • SECURE AI NETWORK</span>
+            <span class="security-badge"><span class="badge-dot"></span> ENCRYPTED</span>
+        </div>
+        <div class="footer-center">
+            <span>AUTHORIZED USE ONLY • SUBJECT TO CONTINUOUS AUDITING</span>
+        </div>
+        <div class="footer-right">
+            <span id="footer-mode">SYSTEM STATUS: OPERATIONAL</span>
+        </div>
     </footer>
 
     <!-- Audio for browser alerts -->
