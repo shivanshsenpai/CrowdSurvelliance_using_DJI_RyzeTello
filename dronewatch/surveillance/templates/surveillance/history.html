@@ -137,6 +137,39 @@
                     <span>Fire: {{ summary.fire_alerts }}</span>
                 </div>
 
+                <!-- Hidden metadata container for JS -->
+                <div id="session-metadata" data-session-id="{{ selected_session.session_id }}"></div>
+
+                <!-- Trends & Visuals Grid -->
+                <div class="history-visuals-grid">
+                    <div class="history-chart-card">
+                        <h2>📈 Crowd Count Timeline (Trend)</h2>
+                        <div class="history-chart-wrapper">
+                            <canvas id="history-timeline-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="history-chart-card">
+                        <h2>🚨 Alert Distribution</h2>
+                        <div class="history-chart-wrapper doughnut-wrapper">
+                            <canvas id="history-alerts-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Heatmap Timeline -->
+                <div class="history-heatmap-card">
+                    <h2>🔥 Crowd Density Heatmap (Timeline)</h2>
+                    <div class="heatmap-description">Hover over the blocks to inspect specific snapshot times and crowd sizes.</div>
+                    <div class="heatmap-wrapper">
+                        <div id="density-heatmap" class="density-heatmap"></div>
+                    </div>
+                    <div class="heatmap-legend">
+                        <span class="legend-item"><span class="legend-color low"></span> Low (0-4)</span>
+                        <span class="legend-item"><span class="legend-color medium"></span> Medium (5-9)</span>
+                        <span class="legend-item"><span class="legend-color high"></span> High Density (10+)</span>
+                    </div>
+                </div>
+
                 <div class="history-table-card">
                     <div class="history-section-title">
                         <h2>Snapshot Records</h2>
@@ -197,5 +230,7 @@
         </div>
     </footer>
     <script src="{% static 'surveillance/theme.js' %}"></script>
+    <script src="{% static 'surveillance/vendor/chart.umd.min.js' %}"></script>
+    <script src="{% static 'surveillance/history.js' %}"></script>
 </body>
 </html>

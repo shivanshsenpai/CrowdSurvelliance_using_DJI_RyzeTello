@@ -21,7 +21,7 @@ DATA_FPS = 4
 DETECT_EVERY_N = 3
 MODE_DETECT_EVERY_N = {
     "human": 3,
-    "weapon": 4,
+    "weapon": 2,
     "fire": 3,
 }
 
